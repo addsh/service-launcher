@@ -10,7 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Create templates/shared.yaml with the network layer only: VPC across two AZs, two public and two private subnets, internet gateway, route tables, and outputs exporting the VPC and subnet IDs
 - [ ] Add gateway VPC endpoint for S3 and interface endpoints for ssm, ssmmessages, and ec2messages to shared.yaml, with an EnableNatGateway parameter defaulting to false and a conditional NAT Gateway
 - [ ] Add security groups to shared.yaml: public ALB, internal ALB, instance, and database, chained so instances only accept traffic from the ALBs and the database only from instances
 - [ ] Add the internet-facing and internal ALBs to shared.yaml with HTTP listeners whose default action is a 404 fixed response, plus an optional HTTPS listener gated on a CertificateArn parameter
@@ -37,3 +36,5 @@ Write tasks as outcomes, not instructions.
 - [ ] Add CloudWatch alarms per service for unhealthy host count and 5xx rate
 
 ## Done
+
+- [x] Create templates/shared.yaml with the network layer only: VPC across two AZs, two public and two private subnets, internet gateway, route tables, and outputs exporting the VPC and subnet IDs
