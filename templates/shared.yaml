@@ -134,50 +134,89 @@ Resources:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
 
-  # Single route table for both private subnets.
-  PrivateRouteTable:
+  # One route table per AZ so each private subnet can get its own NAT
+  # Gateway. A single shared table would force both AZs through one NAT
+  # Gateway, which is a cross-AZ hop and a single point of failure for an
+  # opt-in resource, contrary to the multi-AZ rule in CLAUDE.md.
+  PrivateRouteTable1:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub ${AWS::StackName}-private
+          Value: !Sub ${AWS::StackName}-private-1
+
+  PrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-private-2
 
   PrivateSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref PrivateRouteTable
+      RouteTableId: !Ref PrivateRouteTable1
 
   PrivateSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref PrivateSubnet2
-      RouteTableId: !Ref PrivateRouteTable
+      RouteTableId: !Ref PrivateRouteTable2
 
-  NatGatewayEIP:
+  # One NAT Gateway per AZ, each with its own EIP, so private subnets egress
+  # within their own AZ instead of crossing AZs to a single shared gateway.
+  # This doubles the NAT Gateway hourly charge versus one shared gateway,
+  # accepted per the multi-AZ rule for opt-in resources in CLAUDE.md.
+  NatGatewayEIP1:
     Type: AWS::EC2::EIP
     Condition: CreateNatGateway
     Properties:
       Domain: vpc
 
-  NatGateway:
+  NatGatewayEIP2:
+    Type: AWS::EC2::EIP
+    Condition: CreateNatGateway
+    Properties:
+      Domain: vpc
+
+  NatGateway1:
     Type: AWS::EC2::NatGateway
     Condition: CreateNatGateway
     Properties:
-      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      AllocationId: !GetAtt NatGatewayEIP1.AllocationId
       SubnetId: !Ref PublicSubnet1
       Tags:
         - Key: Name
-          Value: !Sub ${AWS::StackName}-nat
+          Value: !Sub ${AWS::StackName}-nat-1
 
-  PrivateRoute:
+  NatGateway2:
+    Type: AWS::EC2::NatGateway
+    Condition: CreateNatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP2.AllocationId
+      SubnetId: !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-nat-2
+
+  PrivateRoute1:
     Type: AWS::EC2::Route
     Condition: CreateNatGateway
     Properties:
-      RouteTableId: !Ref PrivateRouteTable
+      RouteTableId: !Ref PrivateRouteTable1
       DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref NatGateway
+      NatGatewayId: !Ref NatGateway1
+
+  PrivateRoute2:
+    Type: AWS::EC2::Route
+    Condition: CreateNatGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway2
 
   # Gateway endpoint, no hourly charge. Covers S3 access from both route
   # tables so instances without a NAT Gateway can still pull from S3.
@@ -189,7 +228,8 @@ Resources:
       VpcEndpointType: Gateway
       RouteTableIds:
         - !Ref PublicRouteTable
-        - !Ref PrivateRouteTable
+        - !Ref PrivateRouteTable1
+        - !Ref PrivateRouteTable2
 
   VPCEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
