@@ -77,3 +77,12 @@ jobs:
               was ambiguous.
             - Follow the writing style rules in CLAUDE.md for commit messages
               and the PR title and body.
+
+      - name: Merge the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR=$(gh pr list --state open --json number -q '.[0].number')
+          if [ -n "$PR" ]; then
+            gh pr merge "$PR" --merge --delete-branch
+          fi
