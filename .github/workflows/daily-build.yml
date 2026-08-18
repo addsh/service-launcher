@@ -1,0 +1,70 @@
+name: Daily Build
+
+on:
+  schedule:
+    # Weekdays only, irregular minutes. GitHub cron is UTC only and drifts.
+    - cron: "17 4 * * 1"
+    - cron: "42 5 * * 2"
+    - cron: "8 4 * * 3"
+    - cron: "51 6 * * 4"
+    - cron: "23 5 * * 5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: daily-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set commit identity
+        run: |
+          git config user.name "Aditya Deshpande"
+          git config user.email "addsh10@gmail.com"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --model claude-sonnet-5
+            --max-turns 40
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git:*),Bash(python3:*),Bash(pip:*),Bash(ls:*),Bash(mkdir:*),Bash(chmod:*)"
+          prompt: |
+            Read CLAUDE.md, then TASKS.md.
+
+            Take the first unchecked task under "## Backlog". If the next one
+            or two tasks after it are small and independent of each other,
+            take those too, up to three total. If the first task is large,
+            do only that one.
+
+            For each task you take, make a separate commit. The commit should
+            contain only the change for that task.
+
+            Then:
+            1. Create a branch named daily/<short-slug-of-first-task>.
+            2. Do the work, one commit per task.
+            3. Move each completed task line from "## Backlog" to "## Done"
+               and tick its checkbox.
+            4. Open a pull request. In the body, explain what you did, the
+               design decision you made and why, and anything you were unsure
+               about.
+
+            Rules:
+            - Never push to main. Always open a pull request.
+            - If the backlog is empty, stop and do nothing. Do not invent work.
+            - If a task is ambiguous, do your best and say in the PR body what
+              was ambiguous.
+            - Follow the writing style rules in CLAUDE.md for commit messages
+              and the PR title and body.
