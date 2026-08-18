@@ -10,6 +10,7 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
+- [ ] Add a pull request workflow that runs cfn-lint on every template in templates/ and fails the check on any error, so a broken template cannot merge
 - [ ] Add security groups to shared.yaml: public ALB, internal ALB, instance, and database, chained so instances only accept traffic from the ALBs and the database only from instances
 - [ ] Add the internet-facing and internal ALBs to shared.yaml with HTTP listeners whose default action is a 404 fixed response, plus an optional HTTPS listener gated on a CertificateArn parameter
 - [ ] Add an encrypted PostgreSQL instance to shared.yaml behind a CreateDatabase parameter, with master credentials generated into Secrets Manager and a SecretTargetAttachment
