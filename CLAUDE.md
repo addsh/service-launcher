@@ -101,3 +101,37 @@ real deploy" is exactly the right register.
 - Never commit credentials, account IDs, or ARNs from a real account.
 - Never generate commits for the sake of activity. If the backlog is empty,
   do nothing.
+
+## Making design decisions
+
+Decide and implement. Do not defer a design question to the reviewer. If you
+find yourself writing "not sure whether", pick the option these principles
+point to, implement it, and record the reasoning as a comment in the template
+plus one sentence in the PR body.
+
+Order of precedence when principles conflict:
+
+1. Correctness and security. Never trade these for cost or simplicity.
+2. Cost, for anything that is on by default.
+3. Availability, for anything that is opt-in.
+4. Simplicity.
+
+Applied to the recurring cases in this repo:
+
+- Optional feature that costs money: default it off, make the on path
+  production-shaped rather than minimal. Someone who opts in wants it to work
+  properly, and by opting in has accepted the cost.
+- Single-AZ versus multi-AZ for an opt-in resource: multi-AZ. A user who
+  enables NAT egress or a database is running something real. Cross-AZ data
+  charges and a single point of failure are worse than the second resource.
+- Single-AZ versus multi-AZ for an on-by-default resource: single AZ, with a
+  parameter to raise it.
+- Security group scope: always the narrowest that works. Never widen a rule to
+  avoid writing a second rule.
+- IAM: explicit resource ARNs. If a wildcard is genuinely required, leave a
+  comment naming the API that requires it.
+- Parameter defaults: the cheap, safe option. Expensive or risky settings are
+  opt-in.
+- When a decision has a real tradeoff, put the reasoning in a comment above
+  the resource, not only in the PR body. The PR gets buried; the template is
+  read.
