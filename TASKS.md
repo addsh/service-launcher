@@ -10,7 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Rework the NAT Gateway in shared.yaml to one per AZ so private subnets egress within their own AZ, per the multi-AZ rule for opt-in resources in CLAUDE.md, and note the doubled cost in a comment
 - [ ] Add security groups to shared.yaml: public ALB, internal ALB, instance, and database, chained so instances only accept traffic from the ALBs and the database only from instances
 - [ ] Add the internet-facing and internal ALBs to shared.yaml with HTTP listeners whose default action is a 404 fixed response, plus an optional HTTPS listener gated on a CertificateArn parameter
 - [ ] Add an encrypted PostgreSQL instance to shared.yaml behind a CreateDatabase parameter, with master credentials generated into Secrets Manager and a SecretTargetAttachment
@@ -39,3 +38,4 @@ Write tasks as outcomes, not instructions.
 
 - [x] Create templates/shared.yaml with the network layer only: VPC across two AZs, two public and two private subnets, internet gateway, route tables, and outputs exporting the VPC and subnet IDs
 - [x] Add gateway VPC endpoint for S3 and interface endpoints for ssm, ssmmessages, and ec2messages to shared.yaml, with an EnableNatGateway parameter defaulting to false and a conditional NAT Gateway
+- [x] Rework the NAT Gateway in shared.yaml to one per AZ so private subnets egress within their own AZ, per the multi-AZ rule for opt-in resources in CLAUDE.md, and note the doubled cost in a comment
