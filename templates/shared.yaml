@@ -296,6 +296,14 @@ Resources:
     Properties:
       GroupDescription: Public ALB, open to the internet on HTTP and HTTPS
       VpcId: !Ref VPC
+      # Egress restricted to the instance tier. CloudFormation's default is
+      # allow-all outbound, which an auditor reads as a finding.
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref VpcCidr
+          Description: Forward to service instances
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -314,6 +322,12 @@ Resources:
     Properties:
       GroupDescription: Internal ALB, open to the VPC on HTTP and HTTPS
       VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref VpcCidr
+          Description: Forward to service instances
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -350,6 +364,12 @@ Resources:
     Properties:
       GroupDescription: PostgreSQL, open only to service instances
       VpcId: !Ref VPC
+      # A database has no reason to originate outbound traffic. Denying it
+      # removes the exfiltration path a compromised instance would use.
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 127.0.0.1/32
+          Description: No outbound; placeholder rule replaces the default allow-all
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 5432
