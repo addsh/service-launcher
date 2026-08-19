@@ -43,6 +43,7 @@ jobs:
           GIT_COMMITTER_EMAIL: "addsh10@gmail.com"
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: "true"
           claude_args: |
             --model claude-sonnet-5
             --max-turns 40
@@ -85,4 +86,14 @@ jobs:
           PR=$(gh pr list --state open --json number -q '.[0].number')
           if [ -n "$PR" ]; then
             gh pr merge "$PR" --merge --delete-branch
+          fi
+
+      - name: Fail if nothing was produced
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -z "$(git ls-remote --heads origin 'daily/*')" ] && \
+             [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
+            echo "run produced no branch and no commit"
+            exit 1
           fi
