@@ -92,8 +92,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -z "$(git ls-remote --heads origin 'daily/*')" ] && \
-             [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]; then
-            echo "run produced no branch and no commit"
+          git fetch origin main --quiet
+          BEFORE="${{ github.sha }}"
+          AFTER="$(git rev-parse origin/main)"
+          if [ "$BEFORE" = "$AFTER" ]; then
+            echo "run produced no new commit on main"
             exit 1
           fi
