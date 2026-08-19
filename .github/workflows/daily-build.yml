@@ -46,7 +46,7 @@ jobs:
           claude_args: |
             --model claude-sonnet-5
             --max-turns 40
-            --allowedTools "Read,Write,Edit,Glob,Grep,Bash(git:*),Bash(gh:*),Bash(python3:*),Bash(pip:*),Bash(ls:*),Bash(mkdir:*),Bash(chmod:*)"
+            --allowedTools "Read,Write,Edit,Glob,Grep,Bash"
           prompt: |
             Read CLAUDE.md, then TASKS.md.
 
