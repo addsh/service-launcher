@@ -135,3 +135,10 @@ Applied to the recurring cases in this repo:
 - When a decision has a real tradeoff, put the reasoning in a comment above
   the resource, not only in the PR body. The PR gets buried; the template is
   read.
+
+## Files you cannot change
+
+The GitHub App token has no `workflows` permission, so any push touching
+`.github/workflows/` is rejected server-side. Never take a task that requires
+creating or editing a file there. Skip it, note the skip in the PR body, and
+take the next task instead.

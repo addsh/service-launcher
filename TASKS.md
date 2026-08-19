@@ -10,7 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Add a pull request workflow that runs cfn-lint on every template in templates/ and fails the check on any error, so a broken template cannot merge
 - [ ] Add the internet-facing and internal ALBs to shared.yaml with HTTP listeners whose default action is a 404 fixed response, plus an optional HTTPS listener gated on a CertificateArn parameter
 - [ ] Add an encrypted PostgreSQL instance to shared.yaml behind a CreateDatabase parameter, with master credentials generated into Secrets Manager and a SecretTargetAttachment
 - [ ] Export everything downstream needs from shared.yaml: VPC id, subnet ids, instance security group, both listener ARNs, both ALB DNS names and canonical hosted zone ids, database endpoint, secret ARN
