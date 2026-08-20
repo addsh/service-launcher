@@ -35,8 +35,17 @@ Parameters:
       and S3 without it; only enable this if a service needs to reach the
       open internet.
 
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: >
+      ACM certificate ARN used for the HTTPS listener on both the public and
+      internal ALB. Leave empty to run HTTP only; issuing the certificate is
+      a manual step outside this stack.
+
 Conditions:
   CreateNatGateway: !Equals [!Ref EnableNatGateway, 'true']
+  HasCertificate: !Not [!Equals [!Ref CertificateArn, '']]
 
 Resources:
   VPC:
@@ -378,6 +387,100 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-database
+
+  # Both ALBs default every listener to a 404 fixed response. Services attach
+  # their own listener rules with host-header conditions; a request that
+  # matches no service should get a plain 404, not fall through to whatever
+  # service happens to be first.
+  PublicAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-public
+      Type: application
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref PublicAlbSecurityGroup
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-public
+
+  PublicAlbHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref PublicAlb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+            ContentType: text/plain
+            MessageBody: no service matched this host
+
+  PublicAlbHttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    Properties:
+      LoadBalancerArn: !Ref PublicAlb
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+            ContentType: text/plain
+            MessageBody: no service matched this host
+
+  InternalAlb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AWS::StackName}-internal
+      Type: application
+      Scheme: internal
+      SecurityGroups:
+        - !Ref InternalAlbSecurityGroup
+      Subnets:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-internal
+
+  InternalAlbHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref InternalAlb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+            ContentType: text/plain
+            MessageBody: no service matched this host
+
+  InternalAlbHttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasCertificate
+    Properties:
+      LoadBalancerArn: !Ref InternalAlb
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: '404'
+            ContentType: text/plain
+            MessageBody: no service matched this host
 
 Outputs:
   VpcId:
