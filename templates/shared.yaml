@@ -43,9 +43,33 @@ Parameters:
       internal ALB. Leave empty to run HTTP only; issuing the certificate is
       a manual step outside this stack.
 
+  CreateDatabase:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Set true to create a shared PostgreSQL instance. Costs money whether or
+      not a service uses it; only enable this once a service needs it.
+
+  DatabaseInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+    Description: Instance class for the PostgreSQL instance, only used when CreateDatabase is true.
+
+  DatabaseName:
+    Type: String
+    Default: app
+    Description: Initial database name, only used when CreateDatabase is true.
+
+  DatabaseAllocatedStorage:
+    Type: Number
+    Default: 20
+    Description: Allocated storage in GiB, only used when CreateDatabase is true.
+
 Conditions:
   CreateNatGateway: !Equals [!Ref EnableNatGateway, 'true']
   HasCertificate: !Not [!Equals [!Ref CertificateArn, '']]
+  ShouldCreateDatabase: !Equals [!Ref CreateDatabase, 'true']
 
 Resources:
   VPC:
@@ -481,6 +505,62 @@ Resources:
             StatusCode: '404'
             ContentType: text/plain
             MessageBody: no service matched this host
+
+  # Opt-in resource, so it gets the multi-AZ treatment per the CLAUDE.md rule
+  # for anything a user turns on deliberately: someone enabling a database is
+  # running something real, and a second instance is cheaper than the outage
+  # a single AZ would eventually cause. The instance class itself still
+  # defaults to the cheap db.t4g.micro.
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Condition: ShouldCreateDatabase
+    Properties:
+      DBSubnetGroupDescription: Private subnets for the PostgreSQL instance
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: ShouldCreateDatabase
+    Properties:
+      Description: Master credentials for the shared PostgreSQL instance
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "postgres"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    Condition: ShouldCreateDatabase
+    Properties:
+      Engine: postgres
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      AllocatedStorage: !Ref DatabaseAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: true
+      DBName: !Ref DatabaseName
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}'
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-database
+
+  DatabaseSecretAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Condition: ShouldCreateDatabase
+    Properties:
+      SecretId: !Ref DatabaseSecret
+      TargetId: !Ref Database
+      TargetType: AWS::RDS::DBInstance
 
 Outputs:
   VpcId:
