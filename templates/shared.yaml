@@ -587,3 +587,50 @@ Outputs:
     Value: !Ref PrivateSubnet2
     Export:
       Name: !Sub ${AWS::StackName}-PrivateSubnet2Id
+
+  InstanceSecurityGroupId:
+    Value: !Ref InstanceSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-InstanceSecurityGroupId
+
+  PublicAlbListenerArn:
+    Value: !Ref PublicAlbHttpListener
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicAlbListenerArn
+
+  InternalAlbListenerArn:
+    Value: !Ref InternalAlbHttpListener
+    Export:
+      Name: !Sub ${AWS::StackName}-InternalAlbListenerArn
+
+  PublicAlbDnsName:
+    Value: !GetAtt PublicAlb.DNSName
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicAlbDnsName
+
+  PublicAlbCanonicalHostedZoneId:
+    Value: !GetAtt PublicAlb.CanonicalHostedZoneID
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicAlbCanonicalHostedZoneId
+
+  InternalAlbDnsName:
+    Value: !GetAtt InternalAlb.DNSName
+    Export:
+      Name: !Sub ${AWS::StackName}-InternalAlbDnsName
+
+  InternalAlbCanonicalHostedZoneId:
+    Value: !GetAtt InternalAlb.CanonicalHostedZoneID
+    Export:
+      Name: !Sub ${AWS::StackName}-InternalAlbCanonicalHostedZoneId
+
+  DatabaseEndpoint:
+    Condition: ShouldCreateDatabase
+    Value: !GetAtt Database.Endpoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-DatabaseEndpoint
+
+  DatabaseSecretArn:
+    Condition: ShouldCreateDatabase
+    Value: !Ref DatabaseSecret
+    Export:
+      Name: !Sub ${AWS::StackName}-DatabaseSecretArn
