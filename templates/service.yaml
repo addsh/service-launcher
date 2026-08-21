@@ -1,0 +1,79 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Per-service resources: target group and listener rule. Deployed as a
+  nested stack, one per entry in services.yaml.
+
+Parameters:
+  SharedStackName:
+    Type: String
+    Description: Name of the deployed shared.yaml stack, used to import its exports.
+
+  ServiceName:
+    Type: String
+    Description: Name of the service, used to tag and name resources.
+
+  Port:
+    Type: Number
+    Default: 80
+    Description: Port the service listens on.
+
+  HealthCheckPath:
+    Type: String
+    Default: /
+    Description: Path the target group polls for health checks.
+
+  HostHeader:
+    Type: String
+    Description: Host header value that routes traffic to this service.
+
+  Exposure:
+    Type: String
+    AllowedValues: [public, internal]
+    Default: public
+    Description: Which shared ALB the listener rule attaches to.
+
+  Priority:
+    Type: Number
+    Description: >
+      Listener rule priority. Must be unique per listener; generate.py
+      assigns this by position since CloudFormation cannot compute it.
+
+Conditions:
+  IsPublic: !Equals [!Ref Exposure, public]
+
+Resources:
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${ServiceName}-tg
+      VpcId: !ImportValue
+        Fn::Sub: ${SharedStackName}-VpcId
+      Port: !Ref Port
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: !Ref HealthCheckPath
+      Matcher:
+        HttpCode: '200'
+      Tags:
+        - Key: Name
+          Value: !Ref ServiceName
+
+  ListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !If
+        - IsPublic
+        - !ImportValue
+          Fn::Sub: ${SharedStackName}-PublicAlbListenerArn
+        - !ImportValue
+          Fn::Sub: ${SharedStackName}-InternalAlbListenerArn
+      Priority: !Ref Priority
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - !Ref HostHeader
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
