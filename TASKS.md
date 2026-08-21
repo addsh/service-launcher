@@ -10,9 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Add an encrypted PostgreSQL instance to shared.yaml behind a CreateDatabase parameter, with master credentials generated into Secrets Manager and a SecretTargetAttachment
-- [ ] Export everything downstream needs from shared.yaml: VPC id, subnet ids, instance security group, both listener ARNs, both ALB DNS names and canonical hosted zone ids, database endpoint, secret ARN
-- [ ] Create templates/service.yaml with a target group and a host-header listener rule that imports the correct listener based on an Exposure parameter of public or internal
 - [ ] Add an IAM role, instance profile, and launch template to service.yaml with IMDSv2 required, encrypted gp3 root volume, and user data installing nginx that returns 200 on the health check path
 - [ ] Add an autoscaling group and target-tracking CPU scaling policy to service.yaml, placed in the private subnets with ELB health checks and a rolling update policy
 - [ ] Add a conditional Route 53 alias record to service.yaml, skipped when HostedZoneId is empty
@@ -34,6 +31,9 @@ Write tasks as outcomes, not instructions.
 
 ## Done
 
+- [x] Add an encrypted PostgreSQL instance to shared.yaml behind a CreateDatabase parameter, with master credentials generated into Secrets Manager and a SecretTargetAttachment
+- [x] Export everything downstream needs from shared.yaml: VPC id, subnet ids, instance security group, both listener ARNs, both ALB DNS names and canonical hosted zone ids, database endpoint, secret ARN
+- [x] Create templates/service.yaml with a target group and a host-header listener rule that imports the correct listener based on an Exposure parameter of public or internal
 - [x] Add the internet-facing and internal ALBs to shared.yaml with HTTP listeners whose default action is a 404 fixed response, plus an optional HTTPS listener gated on a CertificateArn parameter
 - [x] Add security groups to shared.yaml: public ALB, internal ALB, instance, and database, chained so instances only accept traffic from the ALBs and the database only from instances
 - [x] Create templates/shared.yaml with the network layer only: VPC across two AZs, two public and two private subnets, internet gateway, route tables, and outputs exporting the VPC and subnet IDs
