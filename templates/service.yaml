@@ -55,6 +55,26 @@ Parameters:
     Default: 8
     Description: Root EBS volume size in GiB.
 
+  MinCapacity:
+    Type: Number
+    Default: 1
+    Description: Minimum number of instances in the autoscaling group.
+
+  MaxCapacity:
+    Type: Number
+    Default: 2
+    Description: Maximum number of instances in the autoscaling group.
+
+  DesiredCapacity:
+    Type: Number
+    Default: 1
+    Description: Desired number of instances in the autoscaling group.
+
+  TargetCpuUtilization:
+    Type: Number
+    Default: 60
+    Description: Target average CPU percentage the scaling policy holds the group to.
+
 Conditions:
   IsPublic: !Equals [!Ref Exposure, public]
   IsRootHealthCheck: !Equals [!Ref HealthCheckPath, /]
@@ -169,3 +189,51 @@ Resources:
                   - !Sub |
                       mkdir -p "/usr/share/nginx/html$(dirname "${HealthCheckPath}")"
                       echo ok > "/usr/share/nginx/html${HealthCheckPath}"
+
+  # Private subnets, per the shared VPC design: instances are never reachable
+  # except through an ALB. HealthCheckType ELB means the ASG trusts the
+  # target group's health check instead of only the EC2 status check, so an
+  # instance that boots but never passes nginx's health check gets replaced.
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${ServiceName}-asg
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinCapacity
+      MaxSize: !Ref MaxCapacity
+      DesiredCapacity: !Ref DesiredCapacity
+      VPCZoneIdentifier:
+        - !ImportValue
+          Fn::Sub: ${SharedStackName}-PrivateSubnet1Id
+        - !ImportValue
+          Fn::Sub: ${SharedStackName}-PrivateSubnet2Id
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      HealthCheckType: ELB
+      # Not sure 60 seconds is enough for nginx to install and start on every
+      # image; worth checking on a real deploy and raising if instances get
+      # cycled before they finish booting.
+      HealthCheckGracePeriod: 60
+      Tags:
+        - Key: Name
+          Value: !Ref ServiceName
+          PropagateAtLaunch: true
+    UpdatePolicy:
+      # Replace instances one at a time, keeping at least one in service, so
+      # a launch template change never drops the service to zero capacity.
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT5M
+
+  CpuScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref TargetCpuUtilization
