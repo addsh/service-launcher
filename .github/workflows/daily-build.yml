@@ -84,9 +84,23 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PR=$(gh pr list --state open --json number -q '.[0].number')
-          if [ -n "$PR" ]; then
-            gh pr merge "$PR" --merge --delete-branch
+          if [ -z "$PR" ]; then
+            echo "no open pull request"
+            exit 0
           fi
+          # Required checks have not started when the agent finishes. Enable
+          # auto-merge so GitHub merges once lint reports, instead of racing it.
+          gh pr merge "$PR" --merge --delete-branch --auto
+          for i in $(seq 1 30); do
+            STATE=$(gh pr view "$PR" --json state -q .state)
+            if [ "$STATE" = "MERGED" ]; then
+              echo "merged"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "pull request $PR did not merge within 10 minutes"
+          exit 1
 
       - name: Fail if nothing was produced
         env:
