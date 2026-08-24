@@ -55,6 +55,21 @@ Parameters:
     Default: 8
     Description: Root EBS volume size in GiB.
 
+  MinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum number of instances in the autoscaling group.
+
+  MaxSize:
+    Type: Number
+    Default: 3
+    Description: Maximum number of instances in the autoscaling group.
+
+  TargetCpuUtilization:
+    Type: Number
+    Default: 60
+    Description: Target average CPU percent the scaling policy holds the group to.
+
 Conditions:
   IsPublic: !Equals [!Ref Exposure, public]
   IsRootHealthCheck: !Equals [!Ref HealthCheckPath, /]
@@ -169,3 +184,47 @@ Resources:
                   - !Sub |
                       mkdir -p "/usr/share/nginx/html$(dirname "${HealthCheckPath}")"
                       echo ok > "/usr/share/nginx/html${HealthCheckPath}"
+
+  # Private subnets: instances are never reached directly, only through the
+  # ALB, so they have no need of a public IP.
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${ServiceName}-asg
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      VPCZoneIdentifier:
+        - !ImportValue
+          Fn::Sub: ${SharedStackName}-PrivateSubnet1Id
+        - !ImportValue
+          Fn::Sub: ${SharedStackName}-PrivateSubnet2Id
+      TargetGroupARNs:
+        - !Ref TargetGroup
+      # ELB health checks, not just EC2 status checks, so an instance that
+      # boots fine but fails the target group health check still gets
+      # replaced.
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 120
+      Tags:
+        - Key: Name
+          Value: !Ref ServiceName
+          PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT5M
+        WaitOnResourceSignals: false
+
+  CpuScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref TargetCpuUtilization
