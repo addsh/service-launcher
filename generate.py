@@ -27,6 +27,11 @@ OPTIONAL_FIELDS = {
 
 FIRST_PRIORITY = 1
 
+# The default ALB quota is 100 rules per listener, and the account can raise
+# it, but generate.py has no way to know the actual quota, so it fails early
+# at a conservative number rather than let a deploy fail partway through.
+MAX_SERVICES_PER_LISTENER = 95
+
 
 class Ref:
     """Marker for a CloudFormation !Ref, so the dumper can emit short form."""
@@ -50,19 +55,41 @@ def logical_id(service_name):
     return "Service" + "".join(part.capitalize() for part in parts if part)
 
 
+def validate_services(services):
+    seen_names = set()
+    counts = {"public": 0, "internal": 0}
+    for service in services:
+        name = service.get("name")
+        if not name:
+            raise ValueError("a service is missing the required 'name' field")
+        if name in seen_names:
+            raise ValueError(f"duplicate service name '{name}'")
+        seen_names.add(name)
+
+        exposure = service.get("exposure", "public")
+        if exposure not in counts:
+            raise ValueError(
+                f"service '{name}' has exposure '{exposure}', expected 'public' or 'internal'"
+            )
+        counts[exposure] += 1
+
+    for exposure, count in counts.items():
+        if count > MAX_SERVICES_PER_LISTENER:
+            raise ValueError(
+                f"{count} {exposure} services exceeds the {MAX_SERVICES_PER_LISTENER} "
+                "per-listener guard (the default ALB quota is 100 rules per listener)"
+            )
+
+
 def assign_priorities(services):
     # Listener rule priorities must be unique per listener and CloudFormation
     # cannot compute them, so they are assigned by position within each
-    # exposure, in the order services appear in services.yaml.
+    # exposure, in the order services appear in services.yaml. Assumes
+    # validate_services has already run, so every exposure is known-good.
     counters = {"public": FIRST_PRIORITY, "internal": FIRST_PRIORITY}
     priorities = []
     for service in services:
         exposure = service.get("exposure", "public")
-        if exposure not in counters:
-            raise ValueError(
-                f"service '{service.get('name')}' has exposure '{exposure}', "
-                "expected 'public' or 'internal'"
-            )
         priorities.append(counters[exposure])
         counters[exposure] += 1
     return priorities
@@ -92,6 +119,7 @@ def build_template(services, template_url):
     if not services:
         raise ValueError("services.yaml has no services, nothing to generate")
 
+    validate_services(services)
     priorities = assign_priorities(services)
 
     resources = {}
