@@ -3,11 +3,9 @@ name: Daily Build
 on:
   schedule:
     # Weekdays only, irregular minutes. GitHub cron is UTC only and drifts.
-    - cron: "17 4 * * 1"
-    - cron: "42 5 * * 2"
-    - cron: "8 4 * * 3"
-    - cron: "51 6 * * 4"
-    - cron: "23 5 * * 5"
+    - cron: "17 4 * * 1-5"
+    - cron: "42 9 * * 1-5"
+    - cron: "8 14 * * 1-5"
   workflow_dispatch: {}
 
 permissions:
@@ -23,7 +21,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
         with:
@@ -46,15 +44,16 @@ jobs:
           show_full_output: "true"
           claude_args: |
             --model claude-sonnet-5
-            --max-turns 40
+            --max-turns 80
             --allowedTools "Read,Write,Edit,Glob,Grep,Bash"
           prompt: |
             Read CLAUDE.md, then TASKS.md.
 
-            Take the first unchecked task under "## Backlog". If the next one
-            or two tasks after it are small and independent of each other,
-            take those too, up to three total. If the first task is large,
-            do only that one.
+            Take the first unchecked task under "## Backlog", then keep
+            taking the following tasks in order for as long as they are
+            independent of each other, up to five in one run. Stop early only
+            if a task depends on one you have not done, or if a task is large
+            enough that doing it properly fills the run on its own.
 
             For each task you take, make a separate commit. The commit should
             contain only the change for that task.
