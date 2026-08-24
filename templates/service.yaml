@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Per-service resources: target group and listener rule. Deployed as a
-  nested stack, one per entry in services.yaml.
+  Per-service resources: target group, listener rule, IAM role, and launch
+  template. Deployed as a nested stack, one per entry in services.yaml.
 
 Parameters:
   SharedStackName:
@@ -38,8 +38,26 @@ Parameters:
       Listener rule priority. Must be unique per listener; generate.py
       assigns this by position since CloudFormation cannot compute it.
 
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: Instance type launched by the launch template.
+
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: >
+      AMI id, resolved at launch time from the SSM public parameter for the
+      latest Amazon Linux 2023 image so the template never pins a stale AMI.
+
+  RootVolumeSize:
+    Type: Number
+    Default: 8
+    Description: Root EBS volume size in GiB.
+
 Conditions:
   IsPublic: !Equals [!Ref Exposure, public]
+  IsRootHealthCheck: !Equals [!Ref HealthCheckPath, /]
 
 Resources:
   TargetGroup:
@@ -77,3 +95,77 @@ Resources:
       Actions:
         - Type: forward
           TargetGroupArn: !Ref TargetGroup
+
+  # Instances have no other way in: there is no bastion and NAT Gateway is
+  # off by default. AmazonSSMManagedInstanceCore paired with the SSM VPC
+  # endpoints in shared.yaml gives Session Manager access instead.
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ServiceName}-instance-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: !Ref ServiceName
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${ServiceName}-lt
+      LaunchTemplateData:
+        ImageId: !Ref ImageId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        # IMDSv2 required, per CLAUDE.md.
+        MetadataOptions:
+          HttpTokens: required
+          HttpEndpoint: enabled
+          HttpPutResponseHopLimit: 1
+        SecurityGroupIds:
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-InstanceSecurityGroupId
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeType: gp3
+              VolumeSize: !Ref RootVolumeSize
+              Encrypted: true
+              DeleteOnTermination: true
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Ref ServiceName
+        UserData:
+          Fn::Base64:
+            Fn::Sub:
+              - |
+                #!/bin/bash
+                dnf install -y nginx
+                systemctl enable nginx
+                ${HealthCheckSetup}
+                systemctl start nginx
+              - HealthCheckSetup: !If
+                  # The default "/" already returns 200 from nginx's stock
+                  # index page. Anything else is written as a single file, so
+                  # this does not handle a custom path that ends in "/".
+                  - IsRootHealthCheck
+                  - ''
+                  - !Sub |
+                      mkdir -p "/usr/share/nginx/html$(dirname "${HealthCheckPath}")"
+                      echo ok > "/usr/share/nginx/html${HealthCheckPath}"
