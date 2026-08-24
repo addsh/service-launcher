@@ -70,9 +70,17 @@ Parameters:
     Default: 60
     Description: Target average CPU percent the scaling policy holds the group to.
 
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: >
+      Route 53 hosted zone id to create an alias record for HostHeader in.
+      Leave empty to skip DNS and point it at the ALB some other way.
+
 Conditions:
   IsPublic: !Equals [!Ref Exposure, public]
   IsRootHealthCheck: !Equals [!Ref HealthCheckPath, /]
+  HasHostedZone: !Not [!Equals [!Ref HostedZoneId, '']]
 
 Resources:
   TargetGroup:
@@ -228,3 +236,27 @@ Resources:
         PredefinedMetricSpecification:
           PredefinedMetricType: ASGAverageCPUUtilization
         TargetValue: !Ref TargetCpuUtilization
+
+  # Optional: a service with no hosted zone still works, just reached by the
+  # ALB DNS name directly instead of HostHeader.
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZone
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref HostHeader
+      Type: A
+      AliasTarget:
+        DNSName: !If
+          - IsPublic
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-PublicAlbDnsName
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-InternalAlbDnsName
+        HostedZoneId: !If
+          - IsPublic
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-PublicAlbCanonicalHostedZoneId
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-InternalAlbCanonicalHostedZoneId
+        EvaluateTargetHealth: true
