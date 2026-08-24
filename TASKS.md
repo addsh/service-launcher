@@ -10,7 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Add an IAM role, instance profile, and launch template to service.yaml with IMDSv2 required, encrypted gp3 root volume, and user data installing nginx that returns 200 on the health check path
 - [ ] Add an autoscaling group and target-tracking CPU scaling policy to service.yaml, placed in the private subnets with ELB health checks and a rolling update policy
 - [ ] Add a conditional Route 53 alias record to service.yaml, skipped when HostedZoneId is empty
 - [ ] Create generate.py that reads services.yaml and emits build/services.generated.yaml, a parent stack with one AWS::CloudFormation::Stack per service
@@ -31,6 +30,7 @@ Write tasks as outcomes, not instructions.
 
 ## Done
 
+- [x] Add an IAM role, instance profile, and launch template to service.yaml with IMDSv2 required, encrypted gp3 root volume, and user data installing nginx that returns 200 on the health check path
 - [x] Add an encrypted PostgreSQL instance to shared.yaml behind a CreateDatabase parameter, with master credentials generated into Secrets Manager and a SecretTargetAttachment
 - [x] Export everything downstream needs from shared.yaml: VPC id, subnet ids, instance security group, both listener ARNs, both ALB DNS names and canonical hosted zone ids, database endpoint, secret ARN
 - [x] Create templates/service.yaml with a target group and a host-header listener rule that imports the correct listener based on an Exposure parameter of public or internal
