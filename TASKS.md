@@ -10,11 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Add an autoscaling group and target-tracking CPU scaling policy to service.yaml, placed in the private subnets with ELB health checks and a rolling update policy
-- [ ] Add a conditional Route 53 alias record to service.yaml, skipped when HostedZoneId is empty
-- [ ] Create generate.py that reads services.yaml and emits build/services.generated.yaml, a parent stack with one AWS::CloudFormation::Stack per service
-- [ ] Add validation to generate.py: reject duplicate service names, reject invalid exposure values, and fail above 95 services per listener since the default ALB quota is 100 rules
-- [ ] Create services.example.yaml showing a minimal entry, a fully specified entry, and an internal service
 - [ ] Create scripts/deploy.sh that creates an artifact bucket if missing, deploys the shared stack, runs generate.py, packages nested templates to S3, and deploys the services stack
 - [ ] Create scripts/teardown.sh that deletes the services stack then the shared stack in order, empties and deletes the artifact bucket, and lists any remaining NAT Gateways, load balancers, and RDS instances
 - [ ] Create scripts/budget-alarm.sh that creates a monthly AWS Budget with actual alerts at 50, 80, and 100 percent plus a forecast alert
@@ -30,6 +25,11 @@ Write tasks as outcomes, not instructions.
 
 ## Done
 
+- [x] Add an autoscaling group and target-tracking CPU scaling policy to service.yaml, placed in the private subnets with ELB health checks and a rolling update policy
+- [x] Add a conditional Route 53 alias record to service.yaml, skipped when HostedZoneId is empty
+- [x] Create generate.py that reads services.yaml and emits build/services.generated.yaml, a parent stack with one AWS::CloudFormation::Stack per service
+- [x] Add validation to generate.py: reject duplicate service names, reject invalid exposure values, and fail above 95 services per listener since the default ALB quota is 100 rules
+- [x] Create services.example.yaml showing a minimal entry, a fully specified entry, and an internal service
 - [x] Add an IAM role, instance profile, and launch template to service.yaml with IMDSv2 required, encrypted gp3 root volume, and user data installing nginx that returns 200 on the health check path
 - [x] Add an encrypted PostgreSQL instance to shared.yaml behind a CreateDatabase parameter, with master credentials generated into Secrets Manager and a SecretTargetAttachment
 - [x] Export everything downstream needs from shared.yaml: VPC id, subnet ids, instance security group, both listener ARNs, both ALB DNS names and canonical hosted zone ids, database endpoint, secret ARN
