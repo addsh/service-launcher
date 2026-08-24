@@ -17,6 +17,12 @@ SERVICES_FILE = Path("services.yaml")
 SERVICE_TEMPLATE = "../templates/service.yaml"
 OUTPUT_FILE = Path("build/services.generated.yaml")
 
+ALLOWED_EXPOSURES = {"public", "internal"}
+
+# The default ALB quota is 100 rules per listener. 95 leaves headroom for the
+# fixed default-action rule and a couple of manual rules an operator might add.
+MAX_SERVICES_PER_LISTENER = 95
+
 
 def logical_id(name):
     # CloudFormation logical ids are alphanumeric only.
@@ -49,6 +55,28 @@ def build_stack(service, config, priority):
     }
 
 
+def validate(config):
+    names = set()
+    counts = {"public": 0, "internal": 0}
+    for service in config["services"]:
+        name = service["name"]
+        if name in names:
+            sys.exit(f"duplicate service name: {name}")
+        names.add(name)
+
+        exposure = service.get("exposure", "public")
+        if exposure not in ALLOWED_EXPOSURES:
+            sys.exit(f"{name}: exposure must be one of {sorted(ALLOWED_EXPOSURES)}, got {exposure!r}")
+        counts[exposure] += 1
+
+    for exposure, count in counts.items():
+        if count > MAX_SERVICES_PER_LISTENER:
+            sys.exit(
+                f"{count} {exposure} services exceeds the {MAX_SERVICES_PER_LISTENER} "
+                "per-listener limit"
+            )
+
+
 def generate(config):
     resources = {}
     # Priorities are assigned per listener, not globally: a public and an
@@ -74,6 +102,7 @@ def main():
     with SERVICES_FILE.open() as f:
         config = yaml.safe_load(f)
 
+    validate(config)
     template = generate(config)
 
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
