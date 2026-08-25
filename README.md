@@ -91,6 +91,30 @@ destinations for less, and don't require a public subnet to route through.
 NAT Gateway is still available behind the EnableNatGateway parameter for a
 service that genuinely needs to reach the open internet.
 
+## Cost
+
+Rough monthly estimates in ap-south-1, list pricing as of writing. Actual
+cost depends on traffic and data transfer; check the AWS Pricing Calculator
+for current numbers before relying on these.
+
+| Component | Estimate | On by default |
+| --- | --- | --- |
+| Public ALB | $18-20 base, plus LCU usage | yes |
+| Internal ALB | $18-20 base, plus LCU usage | yes |
+| Interface VPC endpoints (ssm, ssmmessages, ec2messages, 2 AZs each) | $43 | yes |
+| S3 gateway endpoint | free | yes |
+| Artifact S3 bucket | under $1 | yes |
+| t3.micro instance, per running service instance | $8-9 | yes, one per service by default |
+| gp3 root volume, 8 GiB, per instance | under $1 | yes |
+| NAT Gateway, one per AZ | $65-70 combined, plus data processing | no, EnableNatGateway |
+| PostgreSQL db.t4g.micro, Multi-AZ, 20 GiB gp3 | $28-30 | no, CreateDatabase |
+| Secrets Manager secret | $0.40 | no, only with CreateDatabase |
+
+Nothing in this table tears itself down. Run scripts/teardown.sh at the end
+of every session; a personal account left running a shared ALB, three
+interface endpoints, and a couple of EC2 instances is a few dollars a day
+that adds up if forgotten.
+
 ## License
 
 MIT
