@@ -63,6 +63,19 @@ class DuplicateDetectionTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             generate.validate(config)
 
+    def test_missing_repo_is_allowed(self):
+        config = config_with([{"name": "orders-api"}])
+        generate.validate(config)  # should not raise
+
+    def test_valid_repo_passes(self):
+        config = config_with([{"name": "orders-api", "repo": "example-org/orders-api"}])
+        generate.validate(config)  # should not raise
+
+    def test_malformed_repo_exits(self):
+        config = config_with([{"name": "orders-api", "repo": "not-a-repo"}])
+        with self.assertRaises(SystemExit):
+            generate.validate(config)
+
 
 class ListenerGuardTests(unittest.TestCase):
     def test_at_limit_passes(self):
