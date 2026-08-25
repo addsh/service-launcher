@@ -115,6 +115,30 @@ of every session; a personal account left running a shared ALB, three
 interface endpoints, and a couple of EC2 instances is a few dollars a day
 that adds up if forgotten.
 
+## Known limitations
+
+Listener rule priorities are assigned by position in services.yaml, not by a
+stable key. Reordering the services list, or deleting one from the middle,
+shifts every priority after it and updates every listener rule below the
+change on the next deploy. This is harmless (the rules still route the same
+host headers) but it means a deploy diff can touch far more of the stack
+than the actual edit.
+
+No blue/green or canary deploys. A service update replaces instances through
+the autoscaling group's rolling update policy, one batch at a time, gated
+only by the ELB health check. There is no way to shift a fraction of traffic
+to a new version and watch it before committing the rest.
+
+One database credential, shared by every service. CreateDatabase produces a
+single master secret in Secrets Manager; there is no per-service database
+user or password. A service with a compromised credential has the same
+database access as every other service.
+
+ACM certificates are issued manually. The optional HTTPS listener takes a
+CertificateArn parameter, but nothing in this repo requests or validates the
+certificate. Get one issued and validated in ACM first, in the same region
+as the shared stack, then pass its ARN in.
+
 ## License
 
 MIT
