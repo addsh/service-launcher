@@ -20,6 +20,9 @@ services:
     minSize: 2
     maxSize: 4
     hostedZoneId: Z1234567890ABC
+    # Owner/repo, validated by generate.py. Not wired to anything yet; it
+    # will gate CodePipeline once that lands.
+    repo: example-org/payments-api
 
   # Internal: routed through the internal ALB instead of the public one, so
   # it is reachable only from inside the VPC.

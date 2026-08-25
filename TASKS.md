@@ -10,16 +10,16 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Add a Known limitations section to the README covering position-derived listener priorities, no blue/green, the single shared database credential, and manual ACM certificate issuance
 - [ ] Add a pull request workflow running cfn-lint on templates and a syntax check on generate.py
-- [ ] Write unit tests for generate.py covering priority assignment, duplicate detection, and the 95-service guard
-- [ ] Add a repo field to services.yaml and validate it in generate.py, without wiring CodePipeline yet
 - [ ] Add CodePipeline and CodeBuild to service.yaml gated behind the repo field, and document the CodeStar Connections manual handshake in the README
 - [ ] Add a CloudWatch dashboard per service showing ALB 5xx count, target response time, and in-service ASG capacity
 - [ ] Add CloudWatch alarms per service for unhealthy host count and 5xx rate
 
 ## Done
 
+- [x] Add a Known limitations section to the README covering position-derived listener priorities, no blue/green, the single shared database credential, and manual ACM certificate issuance
+- [x] Write unit tests for generate.py covering priority assignment, duplicate detection, and the 95-service guard
+- [x] Add a repo field to services.yaml and validate it in generate.py, without wiring CodePipeline yet
 - [x] Create scripts/deploy.sh that creates an artifact bucket if missing, deploys the shared stack, runs generate.py, packages nested templates to S3, and deploys the services stack
 - [x] Create scripts/teardown.sh that deletes the services stack then the shared stack in order, empties and deletes the artifact bucket, and lists any remaining NAT Gateways, load balancers, and RDS instances
 - [x] Create scripts/budget-alarm.sh that creates a monthly AWS Budget with actual alerts at 50, 80, and 100 percent plus a forecast alert

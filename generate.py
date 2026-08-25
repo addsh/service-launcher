@@ -19,6 +19,10 @@ OUTPUT_FILE = Path("build/services.generated.yaml")
 
 ALLOWED_EXPOSURES = {"public", "internal"}
 
+# GitHub owner/repo, the shape CodeStar Connections needs later. Validated now
+# so a typo surfaces at generate time instead of when CodePipeline is wired up.
+REPO_PATTERN = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+
 # The default ALB quota is 100 rules per listener. 95 leaves headroom for the
 # fixed default-action rule and a couple of manual rules an operator might add.
 MAX_SERVICES_PER_LISTENER = 95
@@ -68,6 +72,10 @@ def validate(config):
         if exposure not in ALLOWED_EXPOSURES:
             sys.exit(f"{name}: exposure must be one of {sorted(ALLOWED_EXPOSURES)}, got {exposure!r}")
         counts[exposure] += 1
+
+        repo = service.get("repo")
+        if repo is not None and not REPO_PATTERN.match(repo):
+            sys.exit(f"{name}: repo must be of the form owner/repo, got {repo!r}")
 
     for exposure, count in counts.items():
         if count > MAX_SERVICES_PER_LISTENER:
