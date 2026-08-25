@@ -10,11 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Create scripts/deploy.sh that creates an artifact bucket if missing, deploys the shared stack, runs generate.py, packages nested templates to S3, and deploys the services stack
-- [ ] Create scripts/teardown.sh that deletes the services stack then the shared stack in order, empties and deletes the artifact bucket, and lists any remaining NAT Gateways, load balancers, and RDS instances
-- [ ] Create scripts/budget-alarm.sh that creates a monthly AWS Budget with actual alerts at 50, 80, and 100 percent plus a forecast alert
-- [ ] Write the README architecture section with the two-stack model, an ASCII diagram, and the reasoning behind nested stacks, one shared ALB, and VPC endpoints over NAT
-- [ ] Add a cost table to the README with per-component monthly estimates in ap-south-1 and a note that teardown.sh should run after every session
 - [ ] Add a Known limitations section to the README covering position-derived listener priorities, no blue/green, the single shared database credential, and manual ACM certificate issuance
 - [ ] Add a pull request workflow running cfn-lint on templates and a syntax check on generate.py
 - [ ] Write unit tests for generate.py covering priority assignment, duplicate detection, and the 95-service guard
@@ -25,6 +20,11 @@ Write tasks as outcomes, not instructions.
 
 ## Done
 
+- [x] Create scripts/deploy.sh that creates an artifact bucket if missing, deploys the shared stack, runs generate.py, packages nested templates to S3, and deploys the services stack
+- [x] Create scripts/teardown.sh that deletes the services stack then the shared stack in order, empties and deletes the artifact bucket, and lists any remaining NAT Gateways, load balancers, and RDS instances
+- [x] Create scripts/budget-alarm.sh that creates a monthly AWS Budget with actual alerts at 50, 80, and 100 percent plus a forecast alert
+- [x] Write the README architecture section with the two-stack model, an ASCII diagram, and the reasoning behind nested stacks, one shared ALB, and VPC endpoints over NAT
+- [x] Add a cost table to the README with per-component monthly estimates in ap-south-1 and a note that teardown.sh should run after every session
 - [x] Add an autoscaling group and target-tracking CPU scaling policy to service.yaml, placed in the private subnets with ELB health checks and a rolling update policy
 - [x] Add a conditional Route 53 alias record to service.yaml, skipped when HostedZoneId is empty
 - [x] Create generate.py that reads services.yaml and emits build/services.generated.yaml, a parent stack with one AWS::CloudFormation::Stack per service
