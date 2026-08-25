@@ -2,8 +2,6 @@ name: cfn-lint
 
 on:
   pull_request:
-    paths:
-      - 'templates/**'
 
 jobs:
   lint:
@@ -14,4 +12,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install cfn-lint
+      # Runs on every pull request, not only template changes. A required
+      # check that is skipped never reports, and branch protection then
+      # blocks the merge forever.
       - run: cfn-lint templates/*.yaml
