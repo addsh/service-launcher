@@ -38,6 +38,7 @@ def build_stack(service, config, priority):
     name = service["name"]
     exposure = service.get("exposure", "public")
     host_header = service.get("hostHeader", f"{name}.{config['domainName']}")
+    repo = service.get("repo", "")
     return {
         "Type": "AWS::CloudFormation::Stack",
         "Properties": {
@@ -54,6 +55,9 @@ def build_stack(service, config, priority):
                 "MinSize": service.get("minSize", 1),
                 "MaxSize": service.get("maxSize", 3),
                 "HostedZoneId": service.get("hostedZoneId", ""),
+                "Repo": repo,
+                "CodeStarConnectionArn": config.get("codeStarConnectionArn", "") if repo else "",
+                "BranchName": service.get("branch", "main"),
             },
         },
     }
@@ -74,8 +78,14 @@ def validate(config):
         counts[exposure] += 1
 
         repo = service.get("repo")
-        if repo is not None and not REPO_PATTERN.match(repo):
-            sys.exit(f"{name}: repo must be of the form owner/repo, got {repo!r}")
+        if repo is not None:
+            if not REPO_PATTERN.match(repo):
+                sys.exit(f"{name}: repo must be of the form owner/repo, got {repo!r}")
+            if not config.get("codeStarConnectionArn"):
+                sys.exit(
+                    f"{name}: repo is set but codeStarConnectionArn is missing from "
+                    "services.yaml, CodePipeline needs it to authorize GitHub access"
+                )
 
     for exposure, count in counts.items():
         if count > MAX_SERVICES_PER_LISTENER:

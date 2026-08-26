@@ -77,10 +77,36 @@ Parameters:
       Route 53 hosted zone id to create an alias record for HostHeader in.
       Leave empty to skip DNS and point it at the ALB some other way.
 
+  Repo:
+    Type: String
+    Default: ''
+    Description: >
+      GitHub owner/repo to build on every push. Leave empty to skip
+      CodePipeline and CodeBuild entirely.
+
+  CodeStarConnectionArn:
+    Type: String
+    Default: ''
+    Description: >
+      ARN of the CodeStar Connection authorizing access to Repo. Required
+      when Repo is set; see the README for the manual console handshake this
+      needs.
+
+  BranchName:
+    Type: String
+    Default: main
+    Description: Branch CodePipeline builds from.
+
+  BuildComputeType:
+    Type: String
+    Default: BUILD_GENERAL1_SMALL
+    Description: CodeBuild compute size.
+
 Conditions:
   IsPublic: !Equals [!Ref Exposure, public]
   IsRootHealthCheck: !Equals [!Ref HealthCheckPath, /]
   HasHostedZone: !Not [!Equals [!Ref HostedZoneId, '']]
+  HasRepo: !Not [!Equals [!Ref Repo, '']]
 
 Resources:
   TargetGroup:
@@ -260,3 +286,159 @@ Resources:
           - !ImportValue
             Fn::Sub: ${SharedStackName}-InternalAlbCanonicalHostedZoneId
         EvaluateTargetHealth: true
+
+  # Source and build only, no deploy stage. Wiring the build output into the
+  # ASG (CodeDeploy or an instance refresh) is a separate task; today this
+  # pipeline builds on every push and stops there.
+  PipelineArtifactBucket:
+    Type: AWS::S3::Bucket
+    Condition: HasRepo
+    Properties:
+      BucketName: !Sub ${ServiceName}-pipeline-artifacts-${AWS::AccountId}-${AWS::Region}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      # Build artifacts are disposable; nothing needs to keep old versions
+      # around once CodePipeline has moved past them.
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireNoncurrentVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+
+  CodeBuildLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: HasRepo
+    Properties:
+      LogGroupName: !Sub /aws/codebuild/${ServiceName}
+      RetentionInDays: 14
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Condition: HasRepo
+    Properties:
+      RoleName: !Sub ${ServiceName}-codebuild-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildLogsAndArtifacts
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt CodeBuildLogGroup.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub ${PipelineArtifactBucket.Arn}/*
+
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Condition: HasRepo
+    Properties:
+      Name: !Sub ${ServiceName}-build
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+        # buildspec.yml lives in Repo, not here; this launcher has no
+        # knowledge of how a given service builds itself.
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: !Ref BuildComputeType
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: !Ref CodeBuildLogGroup
+
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Condition: HasRepo
+    Properties:
+      RoleName: !Sub ${ServiceName}-pipeline-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PipelineArtifactsAndBuild
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !GetAtt PipelineArtifactBucket.Arn
+                  - !Sub ${PipelineArtifactBucket.Arn}/*
+              - Effect: Allow
+                Action: codestar-connections:UseConnection
+                Resource: !Ref CodeStarConnectionArn
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource: !GetAtt CodeBuildProject.Arn
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Condition: HasRepo
+    Properties:
+      Name: !Sub ${ServiceName}-pipeline
+      RoleArn: !GetAtt PipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref PipelineArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: '1'
+              Configuration:
+                ConnectionArn: !Ref CodeStarConnectionArn
+                FullRepositoryId: !Ref Repo
+                BranchName: !Ref BranchName
+              OutputArtifacts:
+                - Name: SourceOutput
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
