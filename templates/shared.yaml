@@ -623,6 +623,19 @@ Outputs:
     Export:
       Name: !Sub ${AWS::StackName}-InternalAlbCanonicalHostedZoneId
 
+  # The app/name/id form CloudWatch metrics use for the LoadBalancer
+  # dimension, not the DNS name. Per-service dashboards and alarms need this
+  # to address ALB-level metrics for their own target group.
+  PublicAlbFullName:
+    Value: !GetAtt PublicAlb.LoadBalancerFullName
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicAlbFullName
+
+  InternalAlbFullName:
+    Value: !GetAtt InternalAlb.LoadBalancerFullName
+    Export:
+      Name: !Sub ${AWS::StackName}-InternalAlbFullName
+
   DatabaseEndpoint:
     Condition: ShouldCreateDatabase
     Value: !GetAtt Database.Endpoint.Address

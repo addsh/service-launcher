@@ -136,6 +136,8 @@ for current numbers before relying on these.
 | CodePipeline, per service | $1 after the first free pipeline per month | no, only with repo set |
 | CodeBuild, BUILD_GENERAL1_SMALL | $0.005 per build minute | no, only with repo set |
 | Pipeline artifact S3 bucket, per service | under $1 | no, only with repo set |
+| CloudWatch dashboard, per service | $3 after the first three free dashboards per account | yes |
+| CloudWatch alarms, 2 per service | $0.20 after the first ten free alarms per account | yes |
 
 Nothing in this table tears itself down. Run scripts/teardown.sh at the end
 of every session; a personal account left running a shared ALB, three
@@ -170,6 +172,12 @@ CodePipeline builds but does not deploy. Setting repo gets a service built on
 every push, but the build output is not deployed anywhere: there is no
 CodeDeploy stage or instance refresh triggered from the pipeline. Getting a
 new build onto the autoscaling group is still a manual step.
+
+Alarms are silent by default. Each service gets an unhealthy host alarm and a
+5xx alarm, but AlarmSnsTopicArn is empty unless set, so nothing actually
+notifies anyone until you point it at a topic. The 5xx alarm is a raw count
+per period, not a percentage of traffic, since computing a real rate needs a
+metric math expression and a decision about what happens at zero traffic.
 
 ## License
 
