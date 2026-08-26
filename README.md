@@ -136,6 +136,7 @@ for current numbers before relying on these.
 | CodePipeline, per service | $1 after the first free pipeline per month | no, only with repo set |
 | CodeBuild, BUILD_GENERAL1_SMALL | $0.005 per build minute | no, only with repo set |
 | Pipeline artifact S3 bucket, per service | under $1 | no, only with repo set |
+| CloudWatch dashboard, per service | $3 after the first three free dashboards per account | yes |
 
 Nothing in this table tears itself down. Run scripts/teardown.sh at the end
 of every session; a personal account left running a shared ALB, three

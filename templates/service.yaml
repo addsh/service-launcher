@@ -287,6 +287,68 @@ Resources:
             Fn::Sub: ${SharedStackName}-InternalAlbCanonicalHostedZoneId
         EvaluateTargetHealth: true
 
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${ServiceName}-dashboard
+      DashboardBody:
+        Fn::Sub:
+          - |
+            {
+              "widgets": [
+                {
+                  "type": "metric",
+                  "x": 0, "y": 0, "width": 8, "height": 6,
+                  "properties": {
+                    "title": "5xx count",
+                    "view": "timeSeries",
+                    "region": "${AWS::Region}",
+                    "stat": "Sum",
+                    "period": 60,
+                    "metrics": [
+                      ["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "TargetGroup", "${TargetGroupFullName}", "LoadBalancer", "${AlbFullName}"]
+                    ]
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 8, "y": 0, "width": 8, "height": 6,
+                  "properties": {
+                    "title": "Target response time",
+                    "view": "timeSeries",
+                    "region": "${AWS::Region}",
+                    "stat": "Average",
+                    "period": 60,
+                    "metrics": [
+                      ["AWS/ApplicationELB", "TargetResponseTime", "TargetGroup", "${TargetGroupFullName}", "LoadBalancer", "${AlbFullName}"]
+                    ]
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 16, "y": 0, "width": 8, "height": 6,
+                  "properties": {
+                    "title": "In-service instances",
+                    "view": "timeSeries",
+                    "region": "${AWS::Region}",
+                    "stat": "Average",
+                    "period": 60,
+                    "metrics": [
+                      ["AWS/AutoScaling", "GroupInServiceInstances", "AutoScalingGroupName", "${AutoScalingGroupName}"]
+                    ]
+                  }
+                }
+              ]
+            }
+          - TargetGroupFullName: !GetAtt TargetGroup.TargetGroupFullName
+            AlbFullName: !If
+              - IsPublic
+              - !ImportValue
+                Fn::Sub: ${SharedStackName}-PublicAlbFullName
+              - !ImportValue
+                Fn::Sub: ${SharedStackName}-InternalAlbFullName
+            AutoScalingGroupName: !Ref AutoScalingGroup
+
   # Source and build only, no deploy stage. Wiring the build output into the
   # ASG (CodeDeploy or an instance refresh) is a separate task; today this
   # pipeline builds on every push and stops there.
