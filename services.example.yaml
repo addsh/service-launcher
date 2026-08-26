@@ -4,6 +4,10 @@
 sharedStackName: launcher-shared
 domainName: example.internal
 
+# Only needed if any service below sets repo. See the README for the manual
+# console steps that produce this ARN; CloudFormation cannot create it.
+codeStarConnectionArn: arn:aws:codestar-connections:ap-south-1:111111111111:connection/abcd1234
+
 services:
   # Minimal: only a name is required. Everything else falls back to the
   # defaults in templates/service.yaml (port 80, health check on /, exposure
@@ -20,9 +24,11 @@ services:
     minSize: 2
     maxSize: 4
     hostedZoneId: Z1234567890ABC
-    # Owner/repo, validated by generate.py. Not wired to anything yet; it
-    # will gate CodePipeline once that lands.
+    # Owner/repo, validated by generate.py. Setting this creates a
+    # CodePipeline and CodeBuild project that builds this branch on every
+    # push, using codeStarConnectionArn above to authorize GitHub access.
     repo: example-org/payments-api
+    branch: main
 
   # Internal: routed through the internal ALB instead of the public one, so
   # it is reachable only from inside the VPC.

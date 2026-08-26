@@ -91,6 +91,30 @@ destinations for less, and don't require a public subnet to route through.
 NAT Gateway is still available behind the EnableNatGateway parameter for a
 service that genuinely needs to reach the open internet.
 
+## CodePipeline and CodeBuild
+
+Setting `repo` on a service (and `codeStarConnectionArn` once, at the top of
+services.yaml) creates a CodePipeline with a Source stage and a Build stage:
+CodeBuild runs on every push to `branch`, using a buildspec.yml the service
+repo provides. There is no deploy stage. The build artifact lands in an S3
+bucket and stops there; wiring it into the autoscaling group is unbuilt, see
+Known limitations.
+
+The CodeStar Connection itself cannot be created by CloudFormation or the
+CLI. It requires a one-time handshake through the AWS console:
+
+1. In the console, go to Developer Tools > Settings > Connections > Create
+   connection, choose GitHub.
+2. Follow the prompt to install the AWS Connector for GitHub app on the
+   organization that owns the repos you want built, granting it access to
+   those repos.
+3. Complete the connection. Its status moves from Pending to Available only
+   after the GitHub-side authorization finishes in a browser tab.
+4. Copy the connection ARN into `codeStarConnectionArn` in services.yaml.
+
+Do this once per AWS account; every service's pipeline can reuse the same
+connection as long as the GitHub app has access to that service's repo.
+
 ## Cost
 
 Rough monthly estimates in ap-south-1, list pricing as of writing. Actual
@@ -109,6 +133,9 @@ for current numbers before relying on these.
 | NAT Gateway, one per AZ | $65-70 combined, plus data processing | no, EnableNatGateway |
 | PostgreSQL db.t4g.micro, Multi-AZ, 20 GiB gp3 | $28-30 | no, CreateDatabase |
 | Secrets Manager secret | $0.40 | no, only with CreateDatabase |
+| CodePipeline, per service | $1 after the first free pipeline per month | no, only with repo set |
+| CodeBuild, BUILD_GENERAL1_SMALL | $0.005 per build minute | no, only with repo set |
+| Pipeline artifact S3 bucket, per service | under $1 | no, only with repo set |
 
 Nothing in this table tears itself down. Run scripts/teardown.sh at the end
 of every session; a personal account left running a shared ALB, three
@@ -138,6 +165,11 @@ ACM certificates are issued manually. The optional HTTPS listener takes a
 CertificateArn parameter, but nothing in this repo requests or validates the
 certificate. Get one issued and validated in ACM first, in the same region
 as the shared stack, then pass its ARN in.
+
+CodePipeline builds but does not deploy. Setting repo gets a service built on
+every push, but the build output is not deployed anywhere: there is no
+CodeDeploy stage or instance refresh triggered from the pipeline. Getting a
+new build onto the autoscaling group is still a manual step.
 
 ## License
 

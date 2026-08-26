@@ -11,12 +11,12 @@ Write tasks as outcomes, not instructions.
 ## Backlog
 
 - [ ] Add a pull request workflow running cfn-lint on templates and a syntax check on generate.py
-- [ ] Add CodePipeline and CodeBuild to service.yaml gated behind the repo field, and document the CodeStar Connections manual handshake in the README
 - [ ] Add a CloudWatch dashboard per service showing ALB 5xx count, target response time, and in-service ASG capacity
 - [ ] Add CloudWatch alarms per service for unhealthy host count and 5xx rate
 
 ## Done
 
+- [x] Add CodePipeline and CodeBuild to service.yaml gated behind the repo field, and document the CodeStar Connections manual handshake in the README
 - [x] Add a Known limitations section to the README covering position-derived listener priorities, no blue/green, the single shared database credential, and manual ACM certificate issuance
 - [x] Write unit tests for generate.py covering priority assignment, duplicate detection, and the 95-service guard
 - [x] Add a repo field to services.yaml and validate it in generate.py, without wiring CodePipeline yet
