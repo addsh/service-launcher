@@ -92,10 +92,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if ! grep -q '^- \[ \]' TASKS.md; then
+            echo "backlog is empty, nothing to do"
+            exit 0
+          fi
           git fetch origin main --quiet
-          BEFORE="${{ github.sha }}"
-          AFTER="$(git rev-parse origin/main)"
-          if [ "$BEFORE" = "$AFTER" ]; then
-            echo "run produced no new commit on main"
+          if [ "${{ github.sha }}" = "$(git rev-parse origin/main)" ]; then
+            echo "backlog had tasks but main did not move"
             exit 1
           fi
