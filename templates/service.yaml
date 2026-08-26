@@ -102,11 +102,32 @@ Parameters:
     Default: BUILD_GENERAL1_SMALL
     Description: CodeBuild compute size.
 
+  UnhealthyHostThreshold:
+    Type: Number
+    Default: 1
+    Description: Unhealthy target count, sustained for 3 periods, that triggers the alarm.
+
+  Http5xxThreshold:
+    Type: Number
+    Default: 10
+    Description: >
+      Target 5xx responses within one period that trigger the alarm. A count,
+      not a percentage; see the comment above Http5xxAlarm for why.
+
+  AlarmSnsTopicArn:
+    Type: String
+    Default: ''
+    Description: >
+      SNS topic ARN notified when an alarm changes state. Leave empty to
+      create the alarms with no action; they still show state in the console
+      and CLI, just notify nobody.
+
 Conditions:
   IsPublic: !Equals [!Ref Exposure, public]
   IsRootHealthCheck: !Equals [!Ref HealthCheckPath, /]
   HasHostedZone: !Not [!Equals [!Ref HostedZoneId, '']]
   HasRepo: !Not [!Equals [!Ref Repo, '']]
+  HasAlarmTopic: !Not [!Equals [!Ref AlarmSnsTopicArn, '']]
 
 Resources:
   TargetGroup:
@@ -348,6 +369,61 @@ Resources:
               - !ImportValue
                 Fn::Sub: ${SharedStackName}-InternalAlbFullName
             AutoScalingGroupName: !Ref AutoScalingGroup
+
+  UnhealthyHostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ServiceName}-unhealthy-hosts
+      AlarmDescription: !Sub Unhealthy targets in the ${ServiceName} target group
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+        - Name: LoadBalancer
+          Value: !If
+            - IsPublic
+            - !ImportValue
+              Fn::Sub: ${SharedStackName}-PublicAlbFullName
+            - !ImportValue
+              Fn::Sub: ${SharedStackName}-InternalAlbFullName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: !Ref UnhealthyHostThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmSnsTopicArn], !Ref AWS::NoValue]
+
+  # A percentage rate would need a metric math expression dividing 5xx count
+  # by request count, and would need to decide what happens at zero traffic
+  # (divide by zero). A plain count over one period alarms on absolute
+  # volume instead, which is what actually pages someone, and treating
+  # missing data as not breaching means a quiet target group never alarms.
+  Http5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ServiceName}-5xx-rate
+      AlarmDescription: !Sub Elevated 5xx responses from the ${ServiceName} target group
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+        - Name: LoadBalancer
+          Value: !If
+            - IsPublic
+            - !ImportValue
+              Fn::Sub: ${SharedStackName}-PublicAlbFullName
+            - !ImportValue
+              Fn::Sub: ${SharedStackName}-InternalAlbFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: !Ref Http5xxThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmSnsTopicArn], !Ref AWS::NoValue]
 
   # Source and build only, no deploy stage. Wiring the build output into the
   # ASG (CodeDeploy or an instance refresh) is a separate task; today this
