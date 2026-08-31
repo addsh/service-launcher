@@ -132,6 +132,21 @@ Parameters:
       create the alarms with no action; they still show state in the console
       and CLI, just notify nobody.
 
+  DatabaseEndpoint:
+    Type: String
+    Default: ''
+    Description: >
+      Endpoint address of this service's dedicated database, from
+      templates/service-database.yaml. Empty when database is false in
+      services.yaml.
+
+  DatabaseSecretArn:
+    Type: String
+    Default: ''
+    Description: >
+      Secrets Manager ARN holding this database's master credentials. Empty
+      when database is false in services.yaml.
+
 Conditions:
   IsPublic: !Equals [!Ref Exposure, public]
   ShouldUseHttps: !Equals [!Ref UseHttps, 'true']

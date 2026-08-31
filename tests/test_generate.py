@@ -43,6 +43,36 @@ class PriorityAssignmentTests(unittest.TestCase):
         self.assertEqual(params["Priority"], 1)
 
 
+class DatabaseStackTests(unittest.TestCase):
+    def test_database_false_creates_no_database_stack(self):
+        config = config_with([{"name": "a"}])
+        template = generate.generate(config)
+        resources = template["Resources"]
+        self.assertNotIn("ADatabaseStack", resources)
+        params = resources["AStack"]["Properties"]["Parameters"]
+        self.assertEqual(params["DatabaseEndpoint"], "")
+        self.assertEqual(params["DatabaseSecretArn"], "")
+
+    def test_database_true_creates_database_stack_and_wires_outputs(self):
+        config = config_with([{"name": "a", "database": True}])
+        template = generate.generate(config)
+        resources = template["Resources"]
+        self.assertIn("ADatabaseStack", resources)
+        self.assertEqual(
+            resources["ADatabaseStack"]["Properties"]["TemplateURL"],
+            generate.SERVICE_DATABASE_TEMPLATE,
+        )
+        params = resources["AStack"]["Properties"]["Parameters"]
+        self.assertEqual(
+            params["DatabaseEndpoint"],
+            {"Fn::GetAtt": "ADatabaseStack.Outputs.Endpoint"},
+        )
+        self.assertEqual(
+            params["DatabaseSecretArn"],
+            {"Fn::GetAtt": "ADatabaseStack.Outputs.SecretArn"},
+        )
+
+
 class DuplicateDetectionTests(unittest.TestCase):
     def test_duplicate_name_exits(self):
         config = config_with(
