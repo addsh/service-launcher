@@ -1,0 +1,95 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Per-service ElastiCache Valkey cluster: security group scoped to that
+  service's instances, encrypted at rest and in transit. Deployed as a
+  nested stack when a service sets cache: true in services.yaml.
+
+Parameters:
+  SharedStackName:
+    Type: String
+    Description: Name of the deployed shared.yaml stack, used to import its exports.
+
+  ServiceName:
+    Type: String
+    Description: Name of the service this cache belongs to.
+
+  CacheNodeType:
+    Type: String
+    Default: cache.t4g.micro
+    Description: Node type for the Valkey cluster.
+
+  EngineVersion:
+    Type: String
+    Default: '7.2'
+    Description: Valkey engine version.
+
+Resources:
+  # Scoped to this service's own instances, not the shared InstanceSecurityGroup
+  # generally, so one service's compromised instance cannot reach another
+  # service's cache.
+  CacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub Valkey for ${ServiceName}, open only to that service's instances
+      VpcId: !ImportValue
+        Fn::Sub: ${SharedStackName}-VpcId
+      # A cache has no reason to originate outbound traffic. Denying it
+      # removes the exfiltration path a compromised instance would use.
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 127.0.0.1/32
+          Description: No outbound; placeholder rule replaces the default allow-all
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !ImportValue
+            Fn::Sub: ${SharedStackName}-InstanceSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub ${ServiceName}-cache
+
+  CacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: !Sub Private subnets for the ${ServiceName} Valkey cluster
+      SubnetIds:
+        - !ImportValue
+          Fn::Sub: ${SharedStackName}-PrivateSubnet1Id
+        - !ImportValue
+          Fn::Sub: ${SharedStackName}-PrivateSubnet2Id
+
+  # AtRestEncryptionEnabled and TransitEncryptionEnabled only exist on
+  # ReplicationGroup, not on the plain CacheCluster resource, so a
+  # ReplicationGroup is used here even though this is a single node.
+  #
+  # Single-node, not Multi-AZ, unlike the per-service database. A cache holds
+  # derived data the application can repopulate; the database is the system
+  # of record. Losing the node costs a cache-warming period, not data, so the
+  # second node's cost is not worth paying by default.
+  #
+  # cache.t4g.micro single-node Valkey costs about $9-10/month in ap-south-1
+  # (on-demand, no Multi-AZ).
+  CacheReplicationGroup:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      ReplicationGroupId: !Sub ${ServiceName}-cache
+      ReplicationGroupDescription: !Sub Single-node Valkey cluster for ${ServiceName}
+      Engine: valkey
+      EngineVersion: !Ref EngineVersion
+      CacheNodeType: !Ref CacheNodeType
+      NumCacheClusters: 1
+      CacheSubnetGroupName: !Ref CacheSubnetGroup
+      SecurityGroupIds:
+        - !Ref CacheSecurityGroup
+      AtRestEncryptionEnabled: true
+      TransitEncryptionEnabled: true
+      AutomaticFailoverEnabled: false
+      MultiAZEnabled: false
+
+Outputs:
+  Endpoint:
+    Value: !GetAtt CacheReplicationGroup.PrimaryEndPoint.Address
+
+  Port:
+    Value: !GetAtt CacheReplicationGroup.PrimaryEndPoint.Port

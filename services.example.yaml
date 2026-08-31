@@ -24,6 +24,9 @@ services:
     minSize: 2
     maxSize: 4
     hostedZoneId: Z1234567890ABC
+    # ec2 or ecs, defaults to ec2. ecs is validated but not implemented yet:
+    # generate.py rejects it until templates/service-ecs.yaml exists.
+    compute: ec2
     # Owner/repo, validated by generate.py. Setting this creates a
     # CodePipeline and CodeBuild project that builds this branch on every
     # push, using codeStarConnectionArn above to authorize GitHub access.
@@ -33,6 +36,9 @@ services:
     # with credentials in Secrets Manager. Defaults to false. See
     # templates/service-database.yaml.
     database: true
+    # Creates a dedicated single-node encrypted Valkey cluster for this
+    # service. Defaults to false. See templates/service-cache.yaml.
+    cache: true
 
   # Internal: routed through the internal ALB instead of the public one, so
   # it is reachable only from inside the VPC.

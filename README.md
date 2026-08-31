@@ -162,6 +162,7 @@ for current numbers before relying on these.
 | Secrets Manager secret | $0.40 | no, only with CreateDatabase |
 | Per-service PostgreSQL db.t4g.micro, Multi-AZ, 20 GiB gp3 | $28-30 per service | no, only with that service's database: true |
 | Per-service Secrets Manager secret | $0.40 per service | no, only with that service's database: true |
+| Per-service Valkey cache.t4g.micro, single-node | $9-10 per service | no, only with that service's cache: true |
 | CodePipeline, per service | $1 after the first free pipeline per month | no, only with repo set |
 | CodeBuild, BUILD_GENERAL1_SMALL | $0.005 per build minute | no, only with repo set |
 | Pipeline artifact S3 bucket, per service | under $1 | no, only with repo set |
@@ -180,6 +181,7 @@ Encryption at rest:
 | Resource | State |
 | --- | --- |
 | RDS PostgreSQL | `StorageEncrypted: true` |
+| ElastiCache Valkey | `AtRestEncryptionEnabled: true` |
 | Secrets Manager (database credentials) | encrypted by default with the AWS managed key |
 | Launch template root EBS volume | `Encrypted: true`, gp3 |
 | CloudWatch Logs (CodeBuild) | encrypted by default with the AWS managed key |
@@ -193,6 +195,7 @@ Encryption in transit:
 | Service listener rule to ALB | attaches to the HTTP listener unless `UseHttps` is set on the service, which requires the shared stack to have a certificate |
 | Interface VPC endpoints (SSM) | HTTPS only, port 443 |
 | Instance to PostgreSQL | `rds.force_ssl` set in the DB parameter group; plaintext connections are rejected |
+| Instance to Valkey | `TransitEncryptionEnabled: true` on the replication group |
 | CodePipeline/CodeBuild to artifact bucket | bucket policy denies any request without `aws:SecureTransport` |
 
 Not encrypted in transit: ALB to instance, on the target group's HTTP port.
