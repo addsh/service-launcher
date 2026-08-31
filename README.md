@@ -3,7 +3,34 @@
 Declare your services in one YAML file. Get a production-shaped AWS
 environment for all of them.
 
-Work in progress. See TASKS.md for what is being built.
+Work in progress. The templates have not been deployed end to end against a
+live AWS account. They are written to work and reviewed for correctness, but
+nothing here has been verified against real CloudFormation runs yet. See
+TASKS.md for what is being built.
+
+## Quickstart
+
+```bash
+cp services.example.yaml services.yaml
+# edit services.yaml: change the first service's name to something of yours
+./scripts/deploy.sh
+```
+
+That deploys the shared stack (VPC, both ALBs, VPC endpoints) and then a
+nested stack per service. The shared stack takes the longest, mostly the
+interface VPC endpoints.
+
+Routing is host-based, so curl needs the Host header a service was assigned.
+The default is `<service-name>.<domainName>` from services.yaml.
+
+```bash
+ALB_DNS=$(aws cloudformation describe-stacks --stack-name launcher-shared \
+  --query "Stacks[0].Outputs[?OutputKey=='PublicAlbDnsName'].OutputValue" \
+  --output text)
+curl -H "Host: orders-api.example.internal" "http://$ALB_DNS/"
+```
+
+Run scripts/teardown.sh when done. See Cost below for why that matters.
 
 ## Goal
 
