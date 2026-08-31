@@ -3,7 +3,10 @@
 Declare your services in one YAML file. Get a production-shaped AWS
 environment for all of them.
 
-Work in progress. See TASKS.md for what is being built.
+Work in progress. The templates have not been deployed end to end against a
+live AWS account. They are written to work and reviewed for correctness, but
+nothing here has been verified against real CloudFormation runs yet. See
+TASKS.md for what is being built.
 
 ## Goal
 
