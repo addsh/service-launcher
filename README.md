@@ -171,6 +171,33 @@ of every session; a personal account left running a shared ALB, three
 interface endpoints, and a couple of EC2 instances is a few dollars a day
 that adds up if forgotten.
 
+## Security
+
+Encryption at rest:
+
+| Resource | State |
+| --- | --- |
+| RDS PostgreSQL | `StorageEncrypted: true` |
+| Secrets Manager (database credentials) | encrypted by default with the AWS managed key |
+| Launch template root EBS volume | `Encrypted: true`, gp3 |
+| CloudWatch Logs (CodeBuild) | encrypted by default with the AWS managed key |
+| Pipeline artifact S3 bucket | SSE-S3, `AES256` |
+
+Encryption in transit:
+
+| Path | State |
+| --- | --- |
+| Client to public/internal ALB | HTTP by default; HTTPS available when `CertificateArn` is set, `ELBSecurityPolicy-TLS13-1-2-2021-06` |
+| Service listener rule to ALB | attaches to the HTTP listener unless `UseHttps` is set on the service, which requires the shared stack to have a certificate |
+| Interface VPC endpoints (SSM) | HTTPS only, port 443 |
+| Instance to PostgreSQL | `rds.force_ssl` set in the DB parameter group; plaintext connections are rejected |
+| CodePipeline/CodeBuild to artifact bucket | bucket policy denies any request without `aws:SecureTransport` |
+
+Not encrypted in transit: ALB to instance, on the target group's HTTP port.
+This traffic stays inside the private subnets and never leaves the VPC.
+Adding TLS here would mean issuing and rotating a certificate per instance,
+which is a much larger change than this task; see Known limitations.
+
 ## Known limitations
 
 Listener rule priorities are assigned by position in services.yaml, not by a
@@ -199,6 +226,12 @@ CodePipeline builds but does not deploy. Setting repo gets a service built on
 every push, but the build output is not deployed anywhere: there is no
 CodeDeploy stage or instance refresh triggered from the pipeline. Getting a
 new build onto the autoscaling group is still a manual step.
+
+ALB to instance traffic is plaintext HTTP. The target group and health check
+both use the service's HTTP port; only the client-to-ALB and ALB-to-database
+hops are encrypted. This is inside the VPC, not the open internet, but a
+compliance requirement for encryption on every hop would need per-instance
+certificates, which this repo does not issue.
 
 Alarms are silent by default. Each service gets an unhealthy host alarm and a
 5xx alarm, but AlarmSnsTopicArn is empty unless set, so nothing actually
