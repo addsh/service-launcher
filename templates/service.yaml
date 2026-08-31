@@ -32,6 +32,16 @@ Parameters:
     Default: public
     Description: Which shared ALB the listener rule attaches to.
 
+  UseHttps:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Set true to attach the listener rule to the HTTPS listener instead of
+      HTTP. Only valid when the shared stack was deployed with CertificateArn
+      set; otherwise the HTTPS listener export does not exist and this stack
+      fails to create.
+
   Priority:
     Type: Number
     Description: >
@@ -124,6 +134,7 @@ Parameters:
 
 Conditions:
   IsPublic: !Equals [!Ref Exposure, public]
+  ShouldUseHttps: !Equals [!Ref UseHttps, 'true']
   IsRootHealthCheck: !Equals [!Ref HealthCheckPath, /]
   HasHostedZone: !Not [!Equals [!Ref HostedZoneId, '']]
   HasRepo: !Not [!Equals [!Ref Repo, '']]
@@ -152,10 +163,18 @@ Resources:
     Properties:
       ListenerArn: !If
         - IsPublic
-        - !ImportValue
-          Fn::Sub: ${SharedStackName}-PublicAlbListenerArn
-        - !ImportValue
-          Fn::Sub: ${SharedStackName}-InternalAlbListenerArn
+        - !If
+          - ShouldUseHttps
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-PublicAlbHttpsListenerArn
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-PublicAlbListenerArn
+        - !If
+          - ShouldUseHttps
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-InternalAlbHttpsListenerArn
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-InternalAlbListenerArn
       Priority: !Ref Priority
       Conditions:
         - Field: host-header
@@ -451,6 +470,27 @@ Resources:
           - Id: ExpireNoncurrentVersions
             Status: Enabled
             NoncurrentVersionExpirationInDays: 30
+
+  # BucketEncryption above covers data at rest; this covers data in transit,
+  # since S3 accepts plain HTTP unless a bucket policy forbids it.
+  PipelineArtifactBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: HasRepo
+    Properties:
+      Bucket: !Ref PipelineArtifactBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt PipelineArtifactBucket.Arn
+              - !Sub ${PipelineArtifactBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
 
   CodeBuildLogGroup:
     Type: AWS::Logs::LogGroup

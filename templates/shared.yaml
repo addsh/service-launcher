@@ -66,6 +66,13 @@ Parameters:
     Default: 20
     Description: Allocated storage in GiB, only used when CreateDatabase is true.
 
+  DatabaseEngineVersion:
+    Type: String
+    Default: '16'
+    Description: >
+      PostgreSQL major version, only used when CreateDatabase is true. Also
+      selects the DB parameter group family, which must match.
+
 Conditions:
   CreateNatGateway: !Equals [!Ref EnableNatGateway, 'true']
   HasCertificate: !Not [!Equals [!Ref CertificateArn, '']]
@@ -571,15 +578,29 @@ Resources:
         PasswordLength: 32
         ExcludeCharacters: '"@/\'
 
+  # rds.force_ssl rejects any connection that does not negotiate TLS.
+  # StorageEncrypted above only covers data at rest; without this, a client
+  # can still connect in plaintext.
+  DatabaseParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Condition: ShouldCreateDatabase
+    Properties:
+      Description: Forces TLS on every connection to the shared PostgreSQL instance
+      Family: !Sub postgres${DatabaseEngineVersion}
+      Parameters:
+        rds.force_ssl: '1'
+
   Database:
     Type: AWS::RDS::DBInstance
     Condition: ShouldCreateDatabase
     Properties:
       Engine: postgres
+      EngineVersion: !Ref DatabaseEngineVersion
       DBInstanceClass: !Ref DatabaseInstanceClass
       AllocatedStorage: !Ref DatabaseAllocatedStorage
       StorageType: gp3
       StorageEncrypted: true
+      DBParameterGroupName: !Ref DatabaseParameterGroup
       MultiAZ: true
       DBName: !Ref DatabaseName
       MasterUsername: !Sub '{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}'
@@ -642,6 +663,21 @@ Outputs:
     Value: !Ref InternalAlbHttpListener
     Export:
       Name: !Sub ${AWS::StackName}-InternalAlbListenerArn
+
+  # Only exported when a certificate is configured, so a service that opts
+  # into UseHttps against a shared stack with no certificate fails at
+  # ImportValue rather than silently falling back to plaintext.
+  PublicAlbHttpsListenerArn:
+    Condition: HasCertificate
+    Value: !Ref PublicAlbHttpsListener
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicAlbHttpsListenerArn
+
+  InternalAlbHttpsListenerArn:
+    Condition: HasCertificate
+    Value: !Ref InternalAlbHttpsListener
+    Export:
+      Name: !Sub ${AWS::StackName}-InternalAlbHttpsListenerArn
 
   PublicAlbDnsName:
     Value: !GetAtt PublicAlb.DNSName
