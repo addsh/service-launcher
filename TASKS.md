@@ -10,9 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Add a cache boolean and templates/service-cache.yaml providing a single-node encrypted ElastiCache Valkey cluster, with the monthly cost in a comment so the opt-in is informed
-- [ ] Write docs/adding-a-resource-type.md explaining how to add a new optional per-service resource end to end, using the cache implementation as the worked example
-- [ ] Add a compute field to services.yaml accepting ec2 or ecs, defaulting to ec2, validated in generate.py with only the ec2 path implemented
 - [ ] Create templates/service-ecs.yaml providing an ECS Fargate service behind the same shared ALB with task definition, service, and log group, selected when compute is ecs
 - [ ] Add a Compliance notes section to the README mapping what the templates provide to common control requirements: encryption at rest, encryption in transit, least-privilege IAM, network segmentation, audit logging. State plainly this is a starting point and not a certification
 - [ ] Add a validation step to deploy.sh that runs generate.py and aws cloudformation validate-template on every generated template before deploying, failing early with a readable message
@@ -24,6 +21,9 @@ Write tasks as outcomes, not instructions.
 
 ## Done
 
+- [x] Add a cache boolean and templates/service-cache.yaml providing a single-node encrypted ElastiCache Valkey cluster, with the monthly cost in a comment so the opt-in is informed
+- [x] Write docs/adding-a-resource-type.md explaining how to add a new optional per-service resource end to end, using the cache implementation as the worked example
+- [x] Add a compute field to services.yaml accepting ec2 or ecs, defaulting to ec2, validated in generate.py with only the ec2 path implemented
 - [x] Add a database boolean to each service in services.yaml, defaulting to false, validated in generate.py, with no resources created yet
 - [x] Create templates/service-database.yaml: per-service encrypted PostgreSQL with credentials in Secrets Manager, a security group accepting 5432 only from that service's instances, and outputs for endpoint and secret ARN
 - [x] Wire per-service databases into generate.py so database true produces a nested database stack, passing endpoint and secret ARN into the service stack
