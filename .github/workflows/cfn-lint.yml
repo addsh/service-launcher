@@ -12,7 +12,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install cfn-lint
-      # Runs on every pull request, not only template changes. A required
-      # check that is skipped never reports, and branch protection then
-      # blocks the merge forever.
-      - run: cfn-lint templates/*.yaml
+      # Errors fail the check. Warnings are reported but do not block, since
+      # several are unavoidable for parameters whose values are only known at
+      # deploy time.
+      - run: cfn-lint templates/*.yaml --non-zero-exit-code error
