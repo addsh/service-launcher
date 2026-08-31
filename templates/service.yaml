@@ -132,6 +132,21 @@ Parameters:
       create the alarms with no action; they still show state in the console
       and CLI, just notify nobody.
 
+  DatabaseEndpoint:
+    Type: String
+    Default: ''
+    Description: >
+      Endpoint address of this service's dedicated database, from
+      templates/service-database.yaml. Empty when database is false in
+      services.yaml.
+
+  DatabaseSecretArn:
+    Type: String
+    Default: ''
+    Description: >
+      Secrets Manager ARN holding this database's master credentials. Empty
+      when database is false in services.yaml.
+
 Conditions:
   IsPublic: !Equals [!Ref Exposure, public]
   ShouldUseHttps: !Equals [!Ref UseHttps, 'true']
@@ -139,6 +154,7 @@ Conditions:
   HasHostedZone: !Not [!Equals [!Ref HostedZoneId, '']]
   HasRepo: !Not [!Equals [!Ref Repo, '']]
   HasAlarmTopic: !Not [!Equals [!Ref AlarmSnsTopicArn, '']]
+  HasDatabase: !Not [!Equals [!Ref DatabaseEndpoint, '']]
 
 Resources:
   TargetGroup:
@@ -201,6 +217,19 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      # The instance gets the endpoint as plain text in its environment but
+      # still has to fetch the password from Secrets Manager itself, so this
+      # is scoped to the one secret this service owns, not Resource: "*".
+      Policies: !If
+        - HasDatabase
+        - - PolicyName: DatabaseSecretAccess
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref DatabaseSecretArn
+        - !Ref AWS::NoValue
       Tags:
         - Key: Name
           Value: !Ref ServiceName
@@ -248,6 +277,7 @@ Resources:
                 dnf install -y nginx
                 systemctl enable nginx
                 ${HealthCheckSetup}
+                ${DatabaseEnvSetup}
                 systemctl start nginx
               - HealthCheckSetup: !If
                   # The default "/" already returns 200 from nginx's stock
@@ -258,6 +288,20 @@ Resources:
                   - !Sub |
                       mkdir -p "/usr/share/nginx/html$(dirname "${HealthCheckPath}")"
                       echo ok > "/usr/share/nginx/html${HealthCheckPath}"
+                # /etc/environment so the endpoint reaches any process,
+                # not just ones started by this script. Only the endpoint and
+                # the secret ARN go here; the app fetches the password itself
+                # via secretsmanager:GetSecretValue, using the IAM permission
+                # above, so the password is never written to disk in plain
+                # text.
+                DatabaseEnvSetup: !If
+                  - HasDatabase
+                  - !Sub |
+                      cat >> /etc/environment <<EOF
+                      DATABASE_ENDPOINT=${DatabaseEndpoint}
+                      DATABASE_SECRET_ARN=${DatabaseSecretArn}
+                      EOF
+                  - ''
 
   # Private subnets: instances are never reached directly, only through the
   # ALB, so they have no need of a public IP.

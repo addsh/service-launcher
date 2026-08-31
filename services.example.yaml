@@ -29,6 +29,10 @@ services:
     # push, using codeStarConnectionArn above to authorize GitHub access.
     repo: example-org/payments-api
     branch: main
+    # Creates a dedicated encrypted PostgreSQL instance for this service,
+    # with credentials in Secrets Manager. Defaults to false. See
+    # templates/service-database.yaml.
+    database: true
 
   # Internal: routed through the internal ALB instead of the public one, so
   # it is reachable only from inside the VPC.
