@@ -84,6 +84,19 @@ class DuplicateDetectionTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             generate.validate(config)
 
+    def test_missing_database_is_allowed(self):
+        config = config_with([{"name": "orders-api"}])
+        generate.validate(config)  # should not raise
+
+    def test_database_true_passes(self):
+        config = config_with([{"name": "orders-api", "database": True}])
+        generate.validate(config)  # should not raise
+
+    def test_non_bool_database_exits(self):
+        config = config_with([{"name": "orders-api", "database": "yes"}])
+        with self.assertRaises(SystemExit):
+            generate.validate(config)
+
 
 class ListenerGuardTests(unittest.TestCase):
     def test_at_limit_passes(self):

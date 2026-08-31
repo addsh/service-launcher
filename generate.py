@@ -77,6 +77,10 @@ def validate(config):
             sys.exit(f"{name}: exposure must be one of {sorted(ALLOWED_EXPOSURES)}, got {exposure!r}")
         counts[exposure] += 1
 
+        database = service.get("database", False)
+        if not isinstance(database, bool):
+            sys.exit(f"{name}: database must be true or false, got {database!r}")
+
         repo = service.get("repo")
         if repo is not None:
             if not REPO_PATTERN.match(repo):
