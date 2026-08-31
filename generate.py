@@ -102,6 +102,10 @@ def validate(config):
         if not isinstance(database, bool):
             sys.exit(f"{name}: database must be true or false, got {database!r}")
 
+        cache = service.get("cache", False)
+        if not isinstance(cache, bool):
+            sys.exit(f"{name}: cache must be true or false, got {cache!r}")
+
         repo = service.get("repo")
         if repo is not None:
             if not REPO_PATTERN.match(repo):

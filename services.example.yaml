@@ -33,6 +33,9 @@ services:
     # with credentials in Secrets Manager. Defaults to false. See
     # templates/service-database.yaml.
     database: true
+    # Creates a dedicated single-node encrypted Valkey cluster for this
+    # service. Defaults to false. See templates/service-cache.yaml.
+    cache: true
 
   # Internal: routed through the internal ALB instead of the public one, so
   # it is reachable only from inside the VPC.
