@@ -10,9 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Rewrite the README opening so it is honest about status: state plainly that the templates have not been deployed end to end against a live AWS account, and remove wording implying verified production use
-- [ ] Add a quickstart to the top of the README showing the shortest path from clone to a running service: copy the example, change one name, run deploy.sh, curl the ALB
-- [ ] Restrict egress on InstanceSecurityGroup in shared.yaml: 443 to the VPC CIDR for interface endpoints, 5432 to the database security group, and 80 and 443 outbound only when EnableNatGateway is true. Remove the implicit allow-all
 - [ ] Audit every resource in both templates for encryption at rest and in transit, enable it where supported and missing, and add a Security section to the README documenting each
 - [ ] Add a database boolean to each service in services.yaml, defaulting to false, validated in generate.py, with no resources created yet
 - [ ] Create templates/service-database.yaml: per-service encrypted PostgreSQL with credentials in Secrets Manager, a security group accepting 5432 only from that service's instances, and outputs for endpoint and secret ARN
@@ -32,6 +29,9 @@ Write tasks as outcomes, not instructions.
 
 ## Done
 
+- [x] Rewrite the README opening so it is honest about status: state plainly that the templates have not been deployed end to end against a live AWS account, and remove wording implying verified production use
+- [x] Add a quickstart to the top of the README showing the shortest path from clone to a running service: copy the example, change one name, run deploy.sh, curl the ALB
+- [x] Restrict egress on InstanceSecurityGroup in shared.yaml: 443 to the VPC CIDR for interface endpoints, 5432 to the database security group, and 80 and 443 outbound only when EnableNatGateway is true. Remove the implicit allow-all
 - [x] Add CloudWatch alarms per service for unhealthy host count and 5xx rate
 - [x] Add a CloudWatch dashboard per service showing ALB 5xx count, target response time, and in-service ASG capacity
 - [x] Add CodePipeline and CodeBuild to service.yaml gated behind the repo field, and document the CodeStar Connections manual handshake in the README
