@@ -10,7 +10,25 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Add a pull request workflow running cfn-lint on templates and a syntax check on generate.py
+- [ ] Rewrite the README opening so it is honest about status: state plainly that the templates have not been deployed end to end against a live AWS account, and remove wording implying verified production use
+- [ ] Add a quickstart to the top of the README showing the shortest path from clone to a running service: copy the example, change one name, run deploy.sh, curl the ALB
+- [ ] Restrict egress on InstanceSecurityGroup in shared.yaml: 443 to the VPC CIDR for interface endpoints, 5432 to the database security group, and 80 and 443 outbound only when EnableNatGateway is true. Remove the implicit allow-all
+- [ ] Audit every resource in both templates for encryption at rest and in transit, enable it where supported and missing, and add a Security section to the README documenting each
+- [ ] Add a database boolean to each service in services.yaml, defaulting to false, validated in generate.py, with no resources created yet
+- [ ] Create templates/service-database.yaml: per-service encrypted PostgreSQL with credentials in Secrets Manager, a security group accepting 5432 only from that service's instances, and outputs for endpoint and secret ARN
+- [ ] Wire per-service databases into generate.py so database true produces a nested database stack, passing endpoint and secret ARN into the service stack
+- [ ] Extend generate.py to pass every enabled resource's connection details to the service as environment variables on the launch template, so applications never hardcode endpoints
+- [ ] Add a cache boolean and templates/service-cache.yaml providing a single-node encrypted ElastiCache Valkey cluster, with the monthly cost in a comment so the opt-in is informed
+- [ ] Write docs/adding-a-resource-type.md explaining how to add a new optional per-service resource end to end, using the cache implementation as the worked example
+- [ ] Add a compute field to services.yaml accepting ec2 or ecs, defaulting to ec2, validated in generate.py with only the ec2 path implemented
+- [ ] Create templates/service-ecs.yaml providing an ECS Fargate service behind the same shared ALB with task definition, service, and log group, selected when compute is ecs
+- [ ] Add a Compliance notes section to the README mapping what the templates provide to common control requirements: encryption at rest, encryption in transit, least-privilege IAM, network segmentation, audit logging. State plainly this is a starting point and not a certification
+- [ ] Add a validation step to deploy.sh that runs generate.py and aws cloudformation validate-template on every generated template before deploying, failing early with a readable message
+- [ ] Add a --dry-run flag to deploy.sh that creates and describes a change set without executing it
+- [ ] Extend tests/test_generate.py to cover the database, cache, and compute fields: defaults, invalid values, and that enabling a resource produces the expected nested stack
+- [ ] Add CONTRIBUTING.md explaining the repo layout, how generate.py relates to the templates, and the project's scope boundaries
+
+
 
 ## Done
 
