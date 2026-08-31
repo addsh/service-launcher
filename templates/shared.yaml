@@ -379,6 +379,36 @@ Resources:
     Properties:
       GroupDescription: Service instances, open only to the two ALBs
       VpcId: !Ref VPC
+      # Egress restricted to what an instance actually needs: the interface
+      # endpoints for SSM, and the internet only when a NAT Gateway exists to
+      # route it. The 5432 rule to the database lives in a separate
+      # AWS::EC2::SecurityGroupEgress resource below, since embedding a
+      # reference to DatabaseSecurityGroup here would make this group and
+      # DatabaseSecurityGroup depend on each other and CloudFormation cannot
+      # create a circular dependency. CloudFormation's default is allow-all
+      # outbound, which an auditor reads as a finding.
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref VpcCidr
+          Description: SSM, ssmmessages, ec2messages interface endpoints
+        - !If
+          - CreateNatGateway
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            CidrIp: 0.0.0.0/0
+            Description: Internet egress via NAT Gateway
+          - !Ref AWS::NoValue
+        - !If
+          - CreateNatGateway
+          - IpProtocol: tcp
+            FromPort: 443
+            ToPort: 443
+            CidrIp: 0.0.0.0/0
+            Description: Internet egress via NAT Gateway
+          - !Ref AWS::NoValue
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -391,6 +421,16 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-instance
+
+  InstanceToDatabaseEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      DestinationSecurityGroupId: !Ref DatabaseSecurityGroup
+      Description: PostgreSQL
 
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
