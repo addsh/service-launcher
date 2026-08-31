@@ -19,6 +19,7 @@ SERVICE_DATABASE_TEMPLATE = "../templates/service-database.yaml"
 OUTPUT_FILE = Path("build/services.generated.yaml")
 
 ALLOWED_EXPOSURES = {"public", "internal"}
+ALLOWED_COMPUTE = {"ec2", "ecs"}
 
 # GitHub owner/repo, the shape CodeStar Connections needs later. Validated now
 # so a typo surfaces at generate time instead of when CodePipeline is wired up.
@@ -105,6 +106,12 @@ def validate(config):
         cache = service.get("cache", False)
         if not isinstance(cache, bool):
             sys.exit(f"{name}: cache must be true or false, got {cache!r}")
+
+        compute = service.get("compute", "ec2")
+        if compute not in ALLOWED_COMPUTE:
+            sys.exit(f"{name}: compute must be one of {sorted(ALLOWED_COMPUTE)}, got {compute!r}")
+        if compute == "ecs":
+            sys.exit(f"{name}: compute=ecs is not implemented yet, only ec2 works")
 
         repo = service.get("repo")
         if repo is not None:
