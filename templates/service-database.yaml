@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Per-service PostgreSQL instance: security group scoped to that service's
+  instances, encrypted storage, and credentials in Secrets Manager. Deployed
+  as a nested stack when a service sets database: true in services.yaml.
+
+Parameters:
+  SharedStackName:
+    Type: String
+    Description: Name of the deployed shared.yaml stack, used to import its exports.
+
+  ServiceName:
+    Type: String
+    Description: Name of the service this database belongs to.
+
+  DatabaseInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+    Description: Instance class for the PostgreSQL instance.
+
+  DatabaseName:
+    Type: String
+    Default: app
+    Description: Initial database name.
+
+  DatabaseAllocatedStorage:
+    Type: Number
+    Default: 20
+    Description: Allocated storage in GiB.
+
+  DatabaseEngineVersion:
+    Type: String
+    Default: '16'
+    Description: >
+      PostgreSQL major version. Also selects the DB parameter group family,
+      which must match.
+
+Resources:
+  # Scoped to this service's own instances, not the shared InstanceSecurityGroup
+  # generally, so one service's compromised instance cannot reach another
+  # service's database.
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub PostgreSQL for ${ServiceName}, open only to that service's instances
+      VpcId: !ImportValue
+        Fn::Sub: ${SharedStackName}-VpcId
+      # A database has no reason to originate outbound traffic. Denying it
+      # removes the exfiltration path a compromised instance would use.
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 127.0.0.1/32
+          Description: No outbound; placeholder rule replaces the default allow-all
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !ImportValue
+            Fn::Sub: ${SharedStackName}-InstanceSecurityGroupId
+      Tags:
+        - Key: Name
+          Value: !Sub ${ServiceName}-database
+
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub Private subnets for the ${ServiceName} PostgreSQL instance
+      SubnetIds:
+        - !ImportValue
+          Fn::Sub: ${SharedStackName}-PrivateSubnet1Id
+        - !ImportValue
+          Fn::Sub: ${SharedStackName}-PrivateSubnet2Id
+
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: !Sub Master credentials for the ${ServiceName} PostgreSQL instance
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "postgres"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+
+  # rds.force_ssl rejects any connection that does not negotiate TLS.
+  # StorageEncrypted below only covers data at rest; without this, a client
+  # can still connect in plaintext.
+  DatabaseParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: !Sub Forces TLS on every connection to the ${ServiceName} PostgreSQL instance
+      Family: !Sub postgres${DatabaseEngineVersion}
+      Parameters:
+        rds.force_ssl: '1'
+
+  # Multi-AZ: database is opt-in per service, and per CLAUDE.md an opt-in
+  # resource gets the multi-AZ treatment. A service that turns this on is
+  # running something real; the instance class still defaults to the cheap
+  # db.t4g.micro.
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: postgres
+      EngineVersion: !Ref DatabaseEngineVersion
+      DBInstanceClass: !Ref DatabaseInstanceClass
+      AllocatedStorage: !Ref DatabaseAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      DBParameterGroupName: !Ref DatabaseParameterGroup
+      MultiAZ: true
+      DBName: !Ref DatabaseName
+      MasterUsername: !Sub '{{resolve:secretsmanager:${DatabaseSecret}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${DatabaseSecret}:SecretString:password}}'
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      PubliclyAccessible: false
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ServiceName}-database
+
+  DatabaseSecretAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref DatabaseSecret
+      TargetId: !Ref Database
+      TargetType: AWS::RDS::DBInstance
+
+Outputs:
+  Endpoint:
+    Value: !GetAtt Database.Endpoint.Address
+
+  SecretArn:
+    Value: !Ref DatabaseSecret

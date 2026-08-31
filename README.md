@@ -160,6 +160,8 @@ for current numbers before relying on these.
 | NAT Gateway, one per AZ | $65-70 combined, plus data processing | no, EnableNatGateway |
 | PostgreSQL db.t4g.micro, Multi-AZ, 20 GiB gp3 | $28-30 | no, CreateDatabase |
 | Secrets Manager secret | $0.40 | no, only with CreateDatabase |
+| Per-service PostgreSQL db.t4g.micro, Multi-AZ, 20 GiB gp3 | $28-30 per service | no, only with that service's database: true |
+| Per-service Secrets Manager secret | $0.40 per service | no, only with that service's database: true |
 | CodePipeline, per service | $1 after the first free pipeline per month | no, only with repo set |
 | CodeBuild, BUILD_GENERAL1_SMALL | $0.005 per build minute | no, only with repo set |
 | Pipeline artifact S3 bucket, per service | under $1 | no, only with repo set |
