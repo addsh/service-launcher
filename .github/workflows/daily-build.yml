@@ -2,8 +2,6 @@ name: Daily Build
 
 on:
   schedule:
-    # Three runs per weekday, roughly 09:47, 15:12 and 19:38 IST.
-    # GitHub cron is UTC only and drifts under load.
     - cron: "17 4 * * 1-5"
     - cron: "42 9 * * 1-5"
     - cron: "8 14 * * 1-5"
@@ -28,11 +26,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set commit identity
-        run: |
-          git config user.name "Aditya Deshpande"
-          git config user.email "addsh10@gmail.com"
-
       - uses: anthropics/claude-code-action@v1
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -50,40 +43,26 @@ jobs:
           prompt: |
             Read CLAUDE.md, then TASKS.md.
 
-            Take the first unchecked task under "## Backlog", then keep
-            taking the following tasks in order for as long as they are
-            independent of each other, up to five in one run. Stop early only
-            if a task depends on one you have not done, or if a task is large
-            enough that doing it properly fills the run on its own.
-
-            For each task you take, make a separate commit. The commit should
-            contain only the change for that task.
+            Take the first unchecked task under "## Backlog", then keep taking
+            the following tasks in order for as long as they are independent
+            of each other, up to five in one run. Stop early if a task depends
+            on one you have not done, or is large enough to fill the run.
 
             Then:
             1. Create a branch named daily/<short-slug-of-first-task>.
             2. Do the work, one commit per task.
-            3. Move each completed task line from "## Backlog" to "## Done"
-               and tick its checkbox.
-            4. Push the branch: git push -u origin HEAD
-            5. Open a pull request with the gh CLI. This step is required; the
-               run is not complete without it:
+            3. Move each completed task from "## Backlog" to "## Done" and
+               tick its checkbox.
+            4. Push: git push -u origin HEAD
+            5. Open a pull request:
                gh pr create --base main --head <branch> --title "..." --body "..."
-               In the body, explain what you did, the design decision you made
-               and why, and anything you were unsure about.
+               Explain what you did, the design decision and why, and anything
+               you were unsure about.
+            6. Merge it: gh pr merge <number> --merge --delete-branch
 
             Rules:
-            - Never push to main. Always open a pull request.
+            - Never push to main. Always open a pull request first.
             - If the backlog is empty, stop and do nothing. Do not invent work.
-            - If a task is ambiguous, do your best and say in the PR body what
-              was ambiguous.
-            - Follow the writing style rules in CLAUDE.md for commit messages
-              and the PR title and body.
-
-      - name: Merge the pull request
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR=$(gh pr list --state open --json number -q '.[0].number')
-          if [ -n "$PR" ]; then
-            gh pr merge "$PR" --merge --delete-branch
-          fi
+            - Never edit files under .github/workflows/. The token cannot push
+              them. Skip any task requiring it and note the skip.
+            - Follow the writing style rules in CLAUDE.md.
