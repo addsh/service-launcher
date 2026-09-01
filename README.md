@@ -203,6 +203,39 @@ This traffic stays inside the private subnets and never leaves the VPC.
 Adding TLS here would mean issuing and rotating a certificate per instance,
 which is a much larger change than this task; see Known limitations.
 
+## Compliance notes
+
+This is a starting point for satisfying common control frameworks, not a
+certification and not a substitute for a real audit. Mapping is against the
+kind of controls SOC 2 and ISO 27001 both ask for, phrased generically since
+this repo targets no framework in particular.
+
+Encryption at rest: covered for every data store the templates create.
+RDS, ElastiCache, Secrets Manager, the launch template's root volume, and
+both S3 buckets are encrypted; see Security above for the full list.
+
+Encryption in transit: covered between the client and the ALB when
+CertificateArn is set, and between instances and PostgreSQL or Valkey.
+Not covered between the ALB and instances, which stays inside the private
+subnets; see Security above for why that gap exists.
+
+Least-privilege IAM: every IAM policy in these templates names explicit
+resource ARNs. No statement uses `Resource: "*"` without a comment naming
+the API that requires it. Instance and pipeline roles are scoped to the one
+service they belong to, not shared across services.
+
+Network segmentation: security groups chain from ALB to instance to
+database, each accepting traffic only from the security group in front of
+it. Instances and data stores sit in private subnets with no route to the
+internet unless EnableNatGateway is set. One service's security group
+cannot reach another service's database or cache.
+
+Audit logging: not covered. These templates do not enable CloudTrail, VPC
+Flow Logs, or ALB access logs. CodeBuild and the ECS compute path write
+application logs to CloudWatch Logs, but that is not an audit trail of who
+changed what. A user with an audit logging requirement needs to add these
+separately.
+
 ## Known limitations
 
 Listener rule priorities are assigned by position in services.yaml, not by a

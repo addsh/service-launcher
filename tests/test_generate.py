@@ -73,6 +73,25 @@ class DatabaseStackTests(unittest.TestCase):
         )
 
 
+class CacheFieldTests(unittest.TestCase):
+    # cache has the boolean field and templates/service-cache.yaml, but is
+    # not yet wired into generate() the way database is (see
+    # docs/adding-a-resource-type.md), so there is no nested-stack case here
+    # yet. These cover validate() only.
+    def test_missing_cache_is_allowed(self):
+        config = config_with([{"name": "orders-api"}])
+        generate.validate(config)  # should not raise
+
+    def test_cache_true_passes(self):
+        config = config_with([{"name": "orders-api", "cache": True}])
+        generate.validate(config)  # should not raise
+
+    def test_non_bool_cache_exits(self):
+        config = config_with([{"name": "orders-api", "cache": "yes"}])
+        with self.assertRaises(SystemExit):
+            generate.validate(config)
+
+
 class ComputeStackTests(unittest.TestCase):
     def test_compute_ec2_is_default_and_uses_service_template(self):
         config = config_with([{"name": "a"}])
