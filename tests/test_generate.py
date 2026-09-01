@@ -74,10 +74,6 @@ class DatabaseStackTests(unittest.TestCase):
 
 
 class CacheFieldTests(unittest.TestCase):
-    # cache has the boolean field and templates/service-cache.yaml, but is
-    # not yet wired into generate() the way database is (see
-    # docs/adding-a-resource-type.md), so there is no nested-stack case here
-    # yet. These cover validate() only.
     def test_missing_cache_is_allowed(self):
         config = config_with([{"name": "orders-api"}])
         generate.validate(config)  # should not raise
@@ -90,6 +86,45 @@ class CacheFieldTests(unittest.TestCase):
         config = config_with([{"name": "orders-api", "cache": "yes"}])
         with self.assertRaises(SystemExit):
             generate.validate(config)
+
+
+class CacheStackTests(unittest.TestCase):
+    def test_cache_false_creates_no_cache_stack(self):
+        config = config_with([{"name": "a"}])
+        template = generate.generate(config)
+        resources = template["Resources"]
+        self.assertNotIn("ACacheStack", resources)
+        params = resources["AStack"]["Properties"]["Parameters"]
+        self.assertEqual(params["CacheEndpoint"], "")
+        self.assertEqual(params["CachePort"], "")
+
+    def test_cache_true_creates_cache_stack_and_wires_outputs(self):
+        config = config_with([{"name": "a", "cache": True}])
+        template = generate.generate(config)
+        resources = template["Resources"]
+        self.assertIn("ACacheStack", resources)
+        self.assertEqual(
+            resources["ACacheStack"]["Properties"]["TemplateURL"],
+            generate.SERVICE_CACHE_TEMPLATE,
+        )
+        params = resources["AStack"]["Properties"]["Parameters"]
+        self.assertEqual(
+            params["CacheEndpoint"],
+            {"Fn::GetAtt": "ACacheStack.Outputs.Endpoint"},
+        )
+        self.assertEqual(
+            params["CachePort"],
+            {"Fn::GetAtt": "ACacheStack.Outputs.Port"},
+        )
+
+    def test_compute_ecs_with_cache_wires_outputs(self):
+        config = config_with([{"name": "a", "compute": "ecs", "cache": True}])
+        template = generate.generate(config)
+        params = template["Resources"]["AStack"]["Properties"]["Parameters"]
+        self.assertEqual(
+            params["CacheEndpoint"],
+            {"Fn::GetAtt": "ACacheStack.Outputs.Endpoint"},
+        )
 
 
 class ComputeStackTests(unittest.TestCase):

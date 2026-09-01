@@ -147,6 +147,21 @@ Parameters:
       Secrets Manager ARN holding this database's master credentials. Empty
       when database is false in services.yaml.
 
+  CacheEndpoint:
+    Type: String
+    Default: ''
+    Description: >
+      Endpoint address of this service's dedicated Valkey cache, from
+      templates/service-cache.yaml. Empty when cache is false in
+      services.yaml.
+
+  CachePort:
+    Type: String
+    Default: ''
+    Description: >
+      Port the dedicated Valkey cache listens on. Empty when cache is false
+      in services.yaml.
+
 Conditions:
   IsPublic: !Equals [!Ref Exposure, public]
   ShouldUseHttps: !Equals [!Ref UseHttps, 'true']
@@ -155,6 +170,7 @@ Conditions:
   HasRepo: !Not [!Equals [!Ref Repo, '']]
   HasAlarmTopic: !Not [!Equals [!Ref AlarmSnsTopicArn, '']]
   HasDatabase: !Not [!Equals [!Ref DatabaseEndpoint, '']]
+  HasCache: !Not [!Equals [!Ref CacheEndpoint, '']]
 
 Resources:
   TargetGroup:
@@ -278,6 +294,7 @@ Resources:
                 systemctl enable nginx
                 ${HealthCheckSetup}
                 ${DatabaseEnvSetup}
+                ${CacheEnvSetup}
                 systemctl start nginx
               - HealthCheckSetup: !If
                   # The default "/" already returns 200 from nginx's stock
@@ -300,6 +317,17 @@ Resources:
                       cat >> /etc/environment <<EOF
                       DATABASE_ENDPOINT=${DatabaseEndpoint}
                       DATABASE_SECRET_ARN=${DatabaseSecretArn}
+                      EOF
+                  - ''
+                # The cache has no credential to fetch: service-cache.yaml
+                # scopes access by security group alone, so the endpoint and
+                # port are all a client needs.
+                CacheEnvSetup: !If
+                  - HasCache
+                  - !Sub |
+                      cat >> /etc/environment <<EOF
+                      CACHE_ENDPOINT=${CacheEndpoint}
+                      CACHE_PORT=${CachePort}
                       EOF
                   - ''
 

@@ -106,6 +106,21 @@ Parameters:
       Secrets Manager ARN holding this database's master credentials. Empty
       when database is false in services.yaml.
 
+  CacheEndpoint:
+    Type: String
+    Default: ''
+    Description: >
+      Endpoint address of this service's dedicated Valkey cache, from
+      templates/service-cache.yaml. Empty when cache is false in
+      services.yaml.
+
+  CachePort:
+    Type: String
+    Default: ''
+    Description: >
+      Port the dedicated Valkey cache listens on. Empty when cache is false
+      in services.yaml.
+
   UnhealthyHostThreshold:
     Type: Number
     Default: 1
@@ -132,6 +147,7 @@ Conditions:
   ShouldUseHttps: !Equals [!Ref UseHttps, 'true']
   HasHostedZone: !Not [!Equals [!Ref HostedZoneId, '']]
   HasDatabase: !Not [!Equals [!Ref DatabaseEndpoint, '']]
+  HasCache: !Not [!Equals [!Ref CacheEndpoint, '']]
   HasAlarmTopic: !Not [!Equals [!Ref AlarmSnsTopicArn, '']]
 
 Resources:
@@ -212,13 +228,33 @@ Resources:
               awslogs-group: !Ref LogGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
+          # Nested instead of one flat condition: CloudFormation has no way to
+          # conditionally append a single item to a list, so database and
+          # cache being independently optional means every combination of
+          # the two has to be spelled out.
           Environment: !If
             - HasDatabase
-            - - Name: DATABASE_ENDPOINT
-                Value: !Ref DatabaseEndpoint
-              - Name: DATABASE_SECRET_ARN
-                Value: !Ref DatabaseSecretArn
-            - !Ref AWS::NoValue
+            - !If
+              - HasCache
+              - - Name: DATABASE_ENDPOINT
+                  Value: !Ref DatabaseEndpoint
+                - Name: DATABASE_SECRET_ARN
+                  Value: !Ref DatabaseSecretArn
+                - Name: CACHE_ENDPOINT
+                  Value: !Ref CacheEndpoint
+                - Name: CACHE_PORT
+                  Value: !Ref CachePort
+              - - Name: DATABASE_ENDPOINT
+                  Value: !Ref DatabaseEndpoint
+                - Name: DATABASE_SECRET_ARN
+                  Value: !Ref DatabaseSecretArn
+            - !If
+              - HasCache
+              - - Name: CACHE_ENDPOINT
+                  Value: !Ref CacheEndpoint
+                - Name: CACHE_PORT
+                  Value: !Ref CachePort
+              - !Ref AWS::NoValue
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
