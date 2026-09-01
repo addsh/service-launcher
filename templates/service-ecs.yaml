@@ -1,0 +1,320 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Per-service ECS Fargate task: task definition, service, target group,
+  listener rule, and log group. Deployed as a nested stack instead of
+  service.yaml when a service sets compute: ecs in services.yaml.
+
+Parameters:
+  SharedStackName:
+    Type: String
+    Description: Name of the deployed shared.yaml stack, used to import its exports.
+
+  ServiceName:
+    Type: String
+    Description: Name of the service, used to tag and name resources.
+
+  Port:
+    Type: Number
+    Default: 80
+    Description: Port the container listens on.
+
+  HealthCheckPath:
+    Type: String
+    Default: /
+    Description: Path the target group polls for health checks.
+
+  HostHeader:
+    Type: String
+    Description: Host header value that routes traffic to this service.
+
+  Exposure:
+    Type: String
+    AllowedValues: [public, internal]
+    Default: public
+    Description: Which shared ALB the listener rule attaches to.
+
+  UseHttps:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Set true to attach the listener rule to the HTTPS listener instead of
+      HTTP. Only valid when the shared stack was deployed with CertificateArn
+      set; otherwise the HTTPS listener export does not exist and this stack
+      fails to create.
+
+  Priority:
+    Type: Number
+    Description: >
+      Listener rule priority. Must be unique per listener; generate.py
+      assigns this by position since CloudFormation cannot compute it.
+
+  # public.ecr.aws needs a route to the internet to pull from, same as any
+  # other public registry. With EnableNatGateway false (the default) and no
+  # ECR interface endpoints in shared.yaml, a task in the private subnets
+  # cannot pull this image and the service will sit in PENDING. Either turn
+  # on EnableNatGateway or point Image at an image reachable without one.
+  Image:
+    Type: String
+    Default: public.ecr.aws/nginx/nginx:latest
+    Description: Container image. Must expose 200 on HealthCheckPath itself; unlike the ec2 path, nothing here writes a stub file into the image.
+
+  Cpu:
+    Type: String
+    Default: '256'
+    Description: Fargate task CPU units. Must be a value ECS accepts for the chosen Memory.
+
+  Memory:
+    Type: String
+    Default: '512'
+    Description: Fargate task memory in MiB. Must be a value ECS accepts for the chosen Cpu.
+
+  MinSize:
+    Type: Number
+    Default: 1
+    Description: Minimum number of tasks the service scales to.
+
+  MaxSize:
+    Type: Number
+    Default: 3
+    Description: Maximum number of tasks the service scales to.
+
+  TargetCpuUtilization:
+    Type: Number
+    Default: 60
+    Description: Target average CPU percent the scaling policy holds the service to.
+
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: >
+      Route 53 hosted zone id to create an alias record for HostHeader in.
+      Leave empty to skip DNS and point it at the ALB some other way.
+
+  DatabaseEndpoint:
+    Type: String
+    Default: ''
+    Description: >
+      Endpoint address of this service's dedicated database, from
+      templates/service-database.yaml. Empty when database is false in
+      services.yaml.
+
+  DatabaseSecretArn:
+    Type: String
+    Default: ''
+    Description: >
+      Secrets Manager ARN holding this database's master credentials. Empty
+      when database is false in services.yaml.
+
+Conditions:
+  IsPublic: !Equals [!Ref Exposure, public]
+  ShouldUseHttps: !Equals [!Ref UseHttps, 'true']
+  HasHostedZone: !Not [!Equals [!Ref HostedZoneId, '']]
+  HasDatabase: !Not [!Equals [!Ref DatabaseEndpoint, '']]
+
+Resources:
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${ServiceName}
+      RetentionInDays: 14
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${ServiceName}-cluster
+
+  # awslogs and ECR pull permissions only, via the AWS managed policy. This
+  # role never touches application data, so there is nothing to scope further.
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ServiceName}-ecs-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # The application's own runtime permissions. Mirrors InstanceRole in
+  # service.yaml: the container gets the database endpoint as plain text in
+  # its environment but still has to fetch the password itself, so this is
+  # scoped to the one secret this service owns, not Resource: "*".
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ServiceName}-ecs-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies: !If
+        - HasDatabase
+        - - PolicyName: DatabaseSecretAccess
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action: secretsmanager:GetSecretValue
+                  Resource: !Ref DatabaseSecretArn
+        - !Ref AWS::NoValue
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Ref ServiceName
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: !Ref Cpu
+      Memory: !Ref Memory
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: !Ref ServiceName
+          Image: !Ref Image
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref Port
+              Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          Environment: !If
+            - HasDatabase
+            - - Name: DATABASE_ENDPOINT
+                Value: !Ref DatabaseEndpoint
+              - Name: DATABASE_SECRET_ARN
+                Value: !Ref DatabaseSecretArn
+            - !Ref AWS::NoValue
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${ServiceName}-tg
+      VpcId: !ImportValue
+        Fn::Sub: ${SharedStackName}-VpcId
+      Port: !Ref Port
+      Protocol: HTTP
+      # ip, not instance: Fargate awsvpc tasks register their ENI, not an
+      # EC2 instance id.
+      TargetType: ip
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: !Ref HealthCheckPath
+      Matcher:
+        HttpCode: '200'
+      Tags:
+        - Key: Name
+          Value: !Ref ServiceName
+
+  ListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !If
+        - IsPublic
+        - !If
+          - ShouldUseHttps
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-PublicAlbHttpsListenerArn
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-PublicAlbListenerArn
+        - !If
+          - ShouldUseHttps
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-InternalAlbHttpsListenerArn
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-InternalAlbListenerArn
+      Priority: !Ref Priority
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig:
+            Values:
+              - !Ref HostHeader
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # Reuses the shared InstanceSecurityGroup rather than creating a per-service
+  # one. Fargate awsvpc tasks get their own ENI so this is not shared with
+  # any host, only with the rule set: ingress from both ALBs on 80, egress to
+  # the database security group. Same tradeoff the ec2 path already makes.
+  EcsService:
+    Type: AWS::ECS::Service
+    DependsOn: ListenerRule
+    Properties:
+      ServiceName: !Sub ${ServiceName}-service
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      LaunchType: FARGATE
+      DesiredCount: !Ref MinSize
+      HealthCheckGracePeriodSeconds: 120
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: ${SharedStackName}-InstanceSecurityGroupId
+          Subnets:
+            - !ImportValue
+              Fn::Sub: ${SharedStackName}-PrivateSubnet1Id
+            - !ImportValue
+              Fn::Sub: ${SharedStackName}-PrivateSubnet2Id
+      LoadBalancers:
+        - ContainerName: !Ref ServiceName
+          ContainerPort: !Ref Port
+          TargetGroupArn: !Ref TargetGroup
+
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DependsOn: EcsService
+    Properties:
+      ServiceNamespace: ecs
+      ScalableDimension: ecs:service:DesiredCount
+      ResourceId: !Sub service/${Cluster}/${ServiceName}-service
+      MinCapacity: !Ref MinSize
+      MaxCapacity: !Ref MaxSize
+
+  CpuScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub ${ServiceName}-cpu-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: !Ref TargetCpuUtilization
+
+  # Optional: a service with no hosted zone still works, just reached by the
+  # ALB DNS name directly instead of HostHeader.
+  DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: HasHostedZone
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref HostHeader
+      Type: A
+      AliasTarget:
+        DNSName: !If
+          - IsPublic
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-PublicAlbDnsName
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-InternalAlbDnsName
+        HostedZoneId: !If
+          - IsPublic
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-PublicAlbCanonicalHostedZoneId
+          - !ImportValue
+            Fn::Sub: ${SharedStackName}-InternalAlbCanonicalHostedZoneId
+        EvaluateTargetHealth: true

@@ -73,6 +73,51 @@ class DatabaseStackTests(unittest.TestCase):
         )
 
 
+class ComputeStackTests(unittest.TestCase):
+    def test_compute_ec2_is_default_and_uses_service_template(self):
+        config = config_with([{"name": "a"}])
+        template = generate.generate(config)
+        resources = template["Resources"]
+        self.assertEqual(
+            resources["AStack"]["Properties"]["TemplateURL"],
+            generate.SERVICE_TEMPLATE,
+        )
+
+    def test_compute_ecs_uses_ecs_template(self):
+        config = config_with([{"name": "a", "compute": "ecs"}])
+        template = generate.generate(config)
+        resources = template["Resources"]
+        self.assertEqual(
+            resources["AStack"]["Properties"]["TemplateURL"],
+            generate.SERVICE_ECS_TEMPLATE,
+        )
+        params = resources["AStack"]["Properties"]["Parameters"]
+        self.assertNotIn("InstanceType", params)
+        self.assertNotIn("Repo", params)
+
+    def test_compute_ecs_with_database_wires_outputs(self):
+        config = config_with([{"name": "a", "compute": "ecs", "database": True}])
+        template = generate.generate(config)
+        params = template["Resources"]["AStack"]["Properties"]["Parameters"]
+        self.assertEqual(
+            params["DatabaseEndpoint"],
+            {"Fn::GetAtt": "ADatabaseStack.Outputs.Endpoint"},
+        )
+
+    def test_invalid_compute_exits(self):
+        config = config_with([{"name": "a", "compute": "lambda"}])
+        with self.assertRaises(SystemExit):
+            generate.validate(config)
+
+    def test_compute_ecs_with_repo_exits(self):
+        config = config_with(
+            [{"name": "a", "compute": "ecs", "repo": "example-org/a"}],
+            codeStarConnectionArn="arn:aws:codestar-connections:us-east-1:111111111111:connection/abc",
+        )
+        with self.assertRaises(SystemExit):
+            generate.validate(config)
+
+
 class DuplicateDetectionTests(unittest.TestCase):
     def test_duplicate_name_exits(self):
         config = config_with(
