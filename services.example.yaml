@@ -24,12 +24,16 @@ services:
     minSize: 2
     maxSize: 4
     hostedZoneId: Z1234567890ABC
-    # ec2 or ecs, defaults to ec2. ecs is validated but not implemented yet:
-    # generate.py rejects it until templates/service-ecs.yaml exists.
+    # ec2 or ecs, defaults to ec2. ecs deploys templates/service-ecs.yaml
+    # instead of service.yaml: a Fargate task and service behind the same
+    # shared ALB, image defaulting to public.ecr.aws/nginx/nginx:latest. Set
+    # EnableNatGateway in shared.yaml first, since a task in the private
+    # subnets has no other route to pull an image.
     compute: ec2
     # Owner/repo, validated by generate.py. Setting this creates a
     # CodePipeline and CodeBuild project that builds this branch on every
     # push, using codeStarConnectionArn above to authorize GitHub access.
+    # Not supported yet when compute is ecs.
     repo: example-org/payments-api
     branch: main
     # Creates a dedicated encrypted PostgreSQL instance for this service,
