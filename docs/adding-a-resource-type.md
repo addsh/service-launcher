@@ -2,13 +2,8 @@
 
 This walks through the steps to add a new optional resource that a service
 can opt into, the way `database` and `cache` work. It uses the cache
-implementation (`templates/service-cache.yaml`) as the reference for the
-template shape, and the database wiring already in `generate.py` and
-`templates/service.yaml` as the reference for the steps that plug a resource
-into the rest of the stack. As of this writing `cache` has the boolean field
-and the standalone template but is not yet wired into `generate.py`; that is
-the next step for it, and the section below on wiring describes what it
-needs.
+implementation (`templates/service-cache.yaml` plus the wiring in
+`generate.py` and both service templates) as the worked example throughout.
 
 ## 1. Add the field and validate it
 
@@ -87,10 +82,12 @@ if service.get("cache", False):
     resources[cache_id] = build_cache_stack(service, config)
 ```
 
-## 4. Accept it in templates/service.yaml
+## 4. Accept it in templates/service.yaml and templates/service-ecs.yaml
 
-Add matching parameters with an empty string default, so the service stack
-still works when the resource is off:
+Both service templates need the same parameters, since either can be the one
+deployed for a given service depending on `compute`. Add matching parameters
+with an empty string default, so each service stack still works when the
+resource is off:
 
 ```yaml
 CacheEndpoint:
@@ -102,14 +99,21 @@ Add a `Condition` that checks the parameter is non-empty (see `HasDatabase`
 for the pattern), and use it to:
 
 - Scope an IAM policy statement to the resource's own ARN or endpoint, not
-  `Resource: "*"`, if the instance needs to reach it through an API rather
-  than a plain network connection.
-- Write the connection details to `/etc/environment` in the launch
-  template's UserData, so any process on the instance can read them without
-  hardcoding an endpoint. Only write what a client needs to locate the
-  resource; if there is a password or token, the instance should fetch it
-  itself from Secrets Manager at runtime, the way the database credential
-  works, not have it written to disk in plain text.
+  `Resource: "*"`, if the instance or task needs to reach it through an API
+  rather than a plain network connection.
+- In service.yaml, write the connection details to `/etc/environment` in the
+  launch template's UserData, so any process on the instance can read them
+  without hardcoding an endpoint.
+- In service-ecs.yaml, add them to the container definition's `Environment`
+  list instead. That list has no way to conditionally append a single item,
+  so if the new resource and an existing one (database, say) are both
+  optional, the `Environment` value needs every combination spelled out as
+  nested `!If`s; see the comment above `Environment` in service-ecs.yaml.
+
+Either way, only write what a client needs to locate the resource; if there
+is a password or token, the instance or task should fetch it itself from
+Secrets Manager at runtime, the way the database credential works, not have
+it written to disk in plain text.
 
 ## 5. Document it
 

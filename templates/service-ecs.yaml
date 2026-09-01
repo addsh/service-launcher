@@ -106,11 +106,49 @@ Parameters:
       Secrets Manager ARN holding this database's master credentials. Empty
       when database is false in services.yaml.
 
+  CacheEndpoint:
+    Type: String
+    Default: ''
+    Description: >
+      Endpoint address of this service's dedicated Valkey cache, from
+      templates/service-cache.yaml. Empty when cache is false in
+      services.yaml.
+
+  CachePort:
+    Type: String
+    Default: ''
+    Description: >
+      Port the dedicated Valkey cache listens on. Empty when cache is false
+      in services.yaml.
+
+  UnhealthyHostThreshold:
+    Type: Number
+    Default: 1
+    Description: Unhealthy target count, sustained for 3 periods, that triggers the alarm.
+
+  Http5xxThreshold:
+    Type: Number
+    Default: 10
+    Description: >
+      Target 5xx responses within one period that trigger the alarm. A count,
+      not a percentage; see the comment above Http5xxAlarm in service.yaml
+      for why.
+
+  AlarmSnsTopicArn:
+    Type: String
+    Default: ''
+    Description: >
+      SNS topic ARN notified when an alarm changes state. Leave empty to
+      create the alarms with no action; they still show state in the console
+      and CLI, just notify nobody.
+
 Conditions:
   IsPublic: !Equals [!Ref Exposure, public]
   ShouldUseHttps: !Equals [!Ref UseHttps, 'true']
   HasHostedZone: !Not [!Equals [!Ref HostedZoneId, '']]
   HasDatabase: !Not [!Equals [!Ref DatabaseEndpoint, '']]
+  HasCache: !Not [!Equals [!Ref CacheEndpoint, '']]
+  HasAlarmTopic: !Not [!Equals [!Ref AlarmSnsTopicArn, '']]
 
 Resources:
   LogGroup:
@@ -190,13 +228,33 @@ Resources:
               awslogs-group: !Ref LogGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
+          # Nested instead of one flat condition: CloudFormation has no way to
+          # conditionally append a single item to a list, so database and
+          # cache being independently optional means every combination of
+          # the two has to be spelled out.
           Environment: !If
             - HasDatabase
-            - - Name: DATABASE_ENDPOINT
-                Value: !Ref DatabaseEndpoint
-              - Name: DATABASE_SECRET_ARN
-                Value: !Ref DatabaseSecretArn
-            - !Ref AWS::NoValue
+            - !If
+              - HasCache
+              - - Name: DATABASE_ENDPOINT
+                  Value: !Ref DatabaseEndpoint
+                - Name: DATABASE_SECRET_ARN
+                  Value: !Ref DatabaseSecretArn
+                - Name: CACHE_ENDPOINT
+                  Value: !Ref CacheEndpoint
+                - Name: CACHE_PORT
+                  Value: !Ref CachePort
+              - - Name: DATABASE_ENDPOINT
+                  Value: !Ref DatabaseEndpoint
+                - Name: DATABASE_SECRET_ARN
+                  Value: !Ref DatabaseSecretArn
+            - !If
+              - HasCache
+              - - Name: CACHE_ENDPOINT
+                  Value: !Ref CacheEndpoint
+                - Name: CACHE_PORT
+                  Value: !Ref CachePort
+              - !Ref AWS::NoValue
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
@@ -318,3 +376,126 @@ Resources:
           - !ImportValue
             Fn::Sub: ${SharedStackName}-InternalAlbCanonicalHostedZoneId
         EvaluateTargetHealth: true
+
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${ServiceName}-dashboard
+      DashboardBody:
+        Fn::Sub:
+          - |
+            {
+              "widgets": [
+                {
+                  "type": "metric",
+                  "x": 0, "y": 0, "width": 8, "height": 6,
+                  "properties": {
+                    "title": "5xx count",
+                    "view": "timeSeries",
+                    "region": "${AWS::Region}",
+                    "stat": "Sum",
+                    "period": 60,
+                    "metrics": [
+                      ["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "TargetGroup", "${TargetGroupFullName}", "LoadBalancer", "${AlbFullName}"]
+                    ]
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 8, "y": 0, "width": 8, "height": 6,
+                  "properties": {
+                    "title": "Target response time",
+                    "view": "timeSeries",
+                    "region": "${AWS::Region}",
+                    "stat": "Average",
+                    "period": 60,
+                    "metrics": [
+                      ["AWS/ApplicationELB", "TargetResponseTime", "TargetGroup", "${TargetGroupFullName}", "LoadBalancer", "${AlbFullName}"]
+                    ]
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 16, "y": 0, "width": 8, "height": 6,
+                  "properties": {
+                    "title": "CPU utilization",
+                    "view": "timeSeries",
+                    "region": "${AWS::Region}",
+                    "stat": "Average",
+                    "period": 60,
+                    "metrics": [
+                      ["AWS/ECS", "CPUUtilization", "ClusterName", "${ClusterName}", "ServiceName", "${EcsServiceName}"]
+                    ]
+                  }
+                }
+              ]
+            }
+          - TargetGroupFullName: !GetAtt TargetGroup.TargetGroupFullName
+            AlbFullName: !If
+              - IsPublic
+              - !ImportValue
+                Fn::Sub: ${SharedStackName}-PublicAlbFullName
+              - !ImportValue
+                Fn::Sub: ${SharedStackName}-InternalAlbFullName
+            # There is no ASG here to report in-service capacity from, and
+            # RunningTaskCount only exists under Container Insights, which is
+            # opt-in and billed separately. CPU utilization is the metric ECS
+            # publishes for a service by default, so it stands in as the
+            # third widget instead.
+            ClusterName: !Ref Cluster
+            EcsServiceName: !Sub ${ServiceName}-service
+
+  UnhealthyHostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ServiceName}-unhealthy-hosts
+      AlarmDescription: !Sub Unhealthy targets in the ${ServiceName} target group
+      Namespace: AWS/ApplicationELB
+      MetricName: UnHealthyHostCount
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+        - Name: LoadBalancer
+          Value: !If
+            - IsPublic
+            - !ImportValue
+              Fn::Sub: ${SharedStackName}-PublicAlbFullName
+            - !ImportValue
+              Fn::Sub: ${SharedStackName}-InternalAlbFullName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: !Ref UnhealthyHostThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmSnsTopicArn], !Ref AWS::NoValue]
+
+  # A percentage rate would need a metric math expression dividing 5xx count
+  # by request count, and would need to decide what happens at zero traffic
+  # (divide by zero). A plain count over one period alarms on absolute
+  # volume instead, which is what actually pages someone, and treating
+  # missing data as not breaching means a quiet target group never alarms.
+  Http5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ServiceName}-5xx-rate
+      AlarmDescription: !Sub Elevated 5xx responses from the ${ServiceName} target group
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_5XX_Count
+      Dimensions:
+        - Name: TargetGroup
+          Value: !GetAtt TargetGroup.TargetGroupFullName
+        - Name: LoadBalancer
+          Value: !If
+            - IsPublic
+            - !ImportValue
+              Fn::Sub: ${SharedStackName}-PublicAlbFullName
+            - !ImportValue
+              Fn::Sub: ${SharedStackName}-InternalAlbFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: !Ref Http5xxThreshold
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref AlarmSnsTopicArn], !Ref AWS::NoValue]

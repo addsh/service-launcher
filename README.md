@@ -163,6 +163,7 @@ for current numbers before relying on these.
 | Per-service PostgreSQL db.t4g.micro, Multi-AZ, 20 GiB gp3 | $28-30 per service | no, only with that service's database: true |
 | Per-service Secrets Manager secret | $0.40 per service | no, only with that service's database: true |
 | Per-service Valkey cache.t4g.micro, single-node | $9-10 per service | no, only with that service's cache: true |
+| Fargate task, 0.25 vCPU / 512 MiB, per running task | $11-12 | no, only with that service's compute: ecs, one per service by default |
 | CodePipeline, per service | $1 after the first free pipeline per month | no, only with repo set |
 | CodeBuild, BUILD_GENERAL1_SMALL | $0.005 per build minute | no, only with repo set |
 | Pipeline artifact S3 bucket, per service | under $1 | no, only with repo set |
@@ -185,6 +186,7 @@ Encryption at rest:
 | Secrets Manager (database credentials) | encrypted by default with the AWS managed key |
 | Launch template root EBS volume | `Encrypted: true`, gp3 |
 | CloudWatch Logs (CodeBuild) | encrypted by default with the AWS managed key |
+| CloudWatch Logs (ECS tasks) | encrypted by default with the AWS managed key |
 | Pipeline artifact S3 bucket | SSE-S3, `AES256` |
 
 Encryption in transit:
@@ -276,6 +278,17 @@ Alarms are silent by default. Each service gets an unhealthy host alarm and a
 notifies anyone until you point it at a topic. The 5xx alarm is a raw count
 per period, not a percentage of traffic, since computing a real rate needs a
 metric math expression and a decision about what happens at zero traffic.
+
+The ecs compute path needs a route to the internet to pull its image.
+public.ecr.aws is a public registry like any other; with EnableNatGateway
+false (the default) and no ECR interface endpoints in shared.yaml, a task in
+the private subnets cannot pull it and the service sits in PENDING. Turn on
+EnableNatGateway, add ECR interface endpoints, or point Image at something
+reachable without either.
+
+repo and CodePipeline are not supported yet for compute: ecs. generate.py
+rejects the combination. A working pipeline for it needs an ECR push and a
+task definition update, neither of which service-ecs.yaml does today.
 
 ## License
 
