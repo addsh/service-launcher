@@ -22,6 +22,19 @@ if [ -z "$REGION" ]; then
   exit 1
 fi
 
+echo "generating nested stack template from services.yaml"
+python3 generate.py
+
+# Validate every template before touching a stack, so a bad template fails
+# here instead of partway through a deploy.
+echo "validating templates"
+for template in templates/service*.yaml build/services.generated.yaml; do
+  if ! aws cloudformation validate-template --template-body "file://${template}" >/dev/null; then
+    echo "template validation failed: ${template}" >&2
+    exit 1
+  fi
+done
+
 # One artifact bucket per account and region, named so a second person running
 # this against the same account does not collide with a hand-picked name.
 ARTIFACT_BUCKET="service-launcher-artifacts-${ACCOUNT_ID}-${REGION}"
@@ -46,9 +59,6 @@ if [ "$#" -gt 0 ]; then
   DEPLOY_ARGS+=(--parameter-overrides "$@")
 fi
 aws cloudformation deploy "${DEPLOY_ARGS[@]}"
-
-echo "generating nested stack template from services.yaml"
-python3 generate.py
 
 echo "packaging nested templates to s3://${ARTIFACT_BUCKET}"
 aws cloudformation package \
