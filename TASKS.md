@@ -10,11 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Add a Compliance notes section to the README mapping what the templates provide to common control requirements: encryption at rest, encryption in transit, least-privilege IAM, network segmentation, audit logging. State plainly this is a starting point and not a certification
-- [ ] Add a validation step to deploy.sh that runs generate.py and aws cloudformation validate-template on every generated template before deploying, failing early with a readable message
-- [ ] Add a --dry-run flag to deploy.sh that creates and describes a change set without executing it
-- [ ] Extend tests/test_generate.py to cover the database, cache, and compute fields: defaults, invalid values, and that enabling a resource produces the expected nested stack
-- [ ] Add CONTRIBUTING.md explaining the repo layout, how generate.py relates to the templates, and the project's scope boundaries
 - [ ] Add Cost, Security, and Known limitations rows for the ecs compute path to the README: Fargate task pricing, that it needs EnableNatGateway or an ECR interface endpoint to pull images, and that repo/CodePipeline is not supported yet for it
 - [ ] Add a CloudWatch dashboard and unhealthy host/5xx alarms to templates/service-ecs.yaml, matching what service.yaml already gives ec2 services
 - [ ] Wire the cache boolean into generate.py the way database already is, per docs/adding-a-resource-type.md
@@ -23,6 +18,11 @@ Write tasks as outcomes, not instructions.
 
 ## Done
 
+- [x] Add a Compliance notes section to the README mapping what the templates provide to common control requirements: encryption at rest, encryption in transit, least-privilege IAM, network segmentation, audit logging. State plainly this is a starting point and not a certification
+- [x] Add a validation step to deploy.sh that runs generate.py and aws cloudformation validate-template on every generated template before deploying, failing early with a readable message
+- [x] Add a --dry-run flag to deploy.sh that creates and describes a change set without executing it
+- [x] Extend tests/test_generate.py to cover the database, cache, and compute fields: defaults, invalid values, and that enabling a resource produces the expected nested stack
+- [x] Add CONTRIBUTING.md explaining the repo layout, how generate.py relates to the templates, and the project's scope boundaries
 - [x] Create templates/service-ecs.yaml providing an ECS Fargate service behind the same shared ALB with task definition, service, and log group, selected when compute is ecs
 - [x] Add a cache boolean and templates/service-cache.yaml providing a single-node encrypted ElastiCache Valkey cluster, with the monthly cost in a comment so the opt-in is informed
 - [x] Write docs/adding-a-resource-type.md explaining how to add a new optional per-service resource end to end, using the cache implementation as the worked example
