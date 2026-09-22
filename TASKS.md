@@ -10,11 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Create the terraform/ layout (modules/, envs/example/, bootstrap/) with a short terraform/README.md explaining its relationship to the CloudFormation version
-- [ ] Add terraform/bootstrap: an S3 state bucket with versioning, encryption, and public access blocked, plus envs/example/backend.tf showing the S3 backend with use_lockfile = true
-- [ ] Create modules/network: VPC across two AZs, public and private subnets, internet gateway, route tables, and per-AZ NAT gateways behind enable_nat_gateway defaulting to false
-- [ ] Add VPC endpoints to modules/network: free S3 gateway endpoint always, interface endpoints for ssm, ssmmessages, and ec2messages behind enable_ssm_endpoints
-- [ ] Create modules/security: public ALB, internal ALB, instance, and database security groups using separate ingress and egress rule resources, with explicit egress everywhere
 - [ ] Create modules/alb: internet-facing and internal ALBs with HTTP listeners returning a 404 fixed response, and an optional HTTPS listener when certificate_arn is set
 - [ ] Create modules/database: optional shared encrypted PostgreSQL using manage_master_user_password so credentials live in Secrets Manager
 - [ ] Create modules/service: target group, host-header listener rule, IAM role and instance profile scoped to the service's own SSM path, and a launch template with IMDSv2 required and encrypted gp3 root volume
@@ -34,6 +29,11 @@ Write tasks as outcomes, not instructions.
 
 ## Done
 
+- [x] Create modules/security: public ALB, internal ALB, instance, and database security groups using separate ingress and egress rule resources, with explicit egress everywhere
+- [x] Add VPC endpoints to modules/network: free S3 gateway endpoint always, interface endpoints for ssm, ssmmessages, and ec2messages behind enable_ssm_endpoints
+- [x] Create modules/network: VPC across two AZs, public and private subnets, internet gateway, route tables, and per-AZ NAT gateways behind enable_nat_gateway defaulting to false
+- [x] Add terraform/bootstrap: an S3 state bucket with versioning, encryption, and public access blocked, plus envs/example/backend.tf showing the S3 backend with use_lockfile = true
+- [x] Create the terraform/ layout (modules/, envs/example/, bootstrap/) with a short terraform/README.md explaining its relationship to the CloudFormation version
 - [x] Add Cost, Security, and Known limitations rows for the ecs compute path to the README: Fargate task pricing, that it needs EnableNatGateway or an ECR interface endpoint to pull images, and that repo/CodePipeline is not supported yet for it
 - [x] Add a CloudWatch dashboard and unhealthy host/5xx alarms to templates/service-ecs.yaml, matching what service.yaml already gives ec2 services
 - [x] Wire the cache boolean into generate.py the way database already is, per docs/adding-a-resource-type.md
