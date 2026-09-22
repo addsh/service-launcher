@@ -42,3 +42,15 @@ variable "enable_nat_gateway" {
     open internet.
   EOT
 }
+
+variable "enable_ssm_endpoints" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Create interface VPC endpoints for ssm, ssmmessages, and ec2messages, so
+    Session Manager reaches private instances without a NAT Gateway. Billed
+    per AZ per hour plus data processed, so this defaults off; the
+    CloudFormation version creates these unconditionally, this port makes
+    the cost opt-in instead.
+  EOT
+}
