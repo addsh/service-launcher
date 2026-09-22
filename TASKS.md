@@ -10,9 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Create modules/alb: internet-facing and internal ALBs with HTTP listeners returning a 404 fixed response, and an optional HTTPS listener when certificate_arn is set
-- [ ] Create modules/database: optional shared encrypted PostgreSQL using manage_master_user_password so credentials live in Secrets Manager
-- [ ] Create modules/service: target group, host-header listener rule, IAM role and instance profile scoped to the service's own SSM path, and a launch template with IMDSv2 required and encrypted gp3 root volume
 - [ ] Add an autoscaling group with target-tracking CPU policy and an optional Route 53 alias record to modules/service
 - [ ] Wire envs/example: a services map variable iterated with for_each over modules/service, with listener rule priorities taken from an optional per-service field and otherwise derived deterministically from sorted service names
 - [ ] Add variable validation blocks mirroring generate.py: name format, exposure enum, compute enum, and a cap of 95 services per listener
@@ -29,6 +26,9 @@ Write tasks as outcomes, not instructions.
 
 ## Done
 
+- [x] Create modules/service: target group, host-header listener rule, IAM role and instance profile scoped to the service's own SSM path, and a launch template with IMDSv2 required and encrypted gp3 root volume
+- [x] Create modules/database: optional shared encrypted PostgreSQL using manage_master_user_password so credentials live in Secrets Manager
+- [x] Create modules/alb: internet-facing and internal ALBs with HTTP listeners returning a 404 fixed response, and an optional HTTPS listener when certificate_arn is set
 - [x] Create modules/security: public ALB, internal ALB, instance, and database security groups using separate ingress and egress rule resources, with explicit egress everywhere
 - [x] Add VPC endpoints to modules/network: free S3 gateway endpoint always, interface endpoints for ssm, ssmmessages, and ec2messages behind enable_ssm_endpoints
 - [x] Create modules/network: VPC across two AZs, public and private subnets, internet gateway, route tables, and per-AZ NAT gateways behind enable_nat_gateway defaulting to false
