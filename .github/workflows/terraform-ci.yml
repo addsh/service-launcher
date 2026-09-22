@@ -1,0 +1,23 @@
+name: terraform
+
+on:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: hashicorp/setup-terraform@v3
+      - name: fmt, validate, test
+        run: |
+          if [ ! -d terraform ]; then echo "no terraform directory yet"; exit 0; fi
+          terraform fmt -check -recursive terraform
+          for d in $(find terraform -name '*.tf' -not -path '*/.terraform/*' -exec dirname {} \; | sort -u); do
+            echo "== $d"
+            (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform validate)
+          done
+          for d in $(find terraform -name '*.tftest.hcl' -exec dirname {} \; | sort -u); do
+            echo "== test $d"
+            (cd "$d" && terraform init -backend=false -input=false >/dev/null && terraform test)
+          done

@@ -142,3 +142,32 @@ The GitHub App token has no `workflows` permission, so any push touching
 `.github/workflows/` is rejected server-side. Never take a task that requires
 creating or editing a file there. Skip it, note the skip in the PR body, and
 take the next task instead.
+
+## Terraform version
+
+A Terraform port of the same architecture lives in terraform/. The
+CloudFormation version stays as it is. Do not change templates/ while
+working on Terraform tasks.
+
+Layout:
+- terraform/modules/<name>/ for reusable modules (network, security, alb,
+  database, service, and later cache and ecs-service)
+- terraform/envs/example/ is the root module a user copies and edits
+- terraform/bootstrap/ creates the remote state bucket
+
+Conventions:
+- Pin required_version and the AWS provider to a major version in versions.tf.
+- Remote state in S3 with native S3 locking (use_lockfile = true). No
+  DynamoDB lock table; it is deprecated for this purpose.
+- Services are a map variable iterated with for_each, never count, so
+  removing one service does not shift the others.
+- Security group rules as separate aws_vpc_security_group_ingress_rule and
+  egress_rule resources, never inline, to avoid dependency cycles.
+- Mirror generate.py validation with variable validation blocks.
+- Tests use terraform test with mock_provider, so they run without AWS
+  credentials.
+- Never run terraform apply or plan against a real account. CI runs fmt,
+  validate, and test only.
+- Same security and cost rules as the CloudFormation version.
+- Where Terraform does something better or worse than CloudFormation,
+  note it for the comparison section of the README.
