@@ -13,6 +13,7 @@ module "security" {
   vpc_id             = module.network.vpc_id
   vpc_cidr           = module.network.vpc_cidr
   enable_nat_gateway = var.enable_nat_gateway
+  services           = var.services
 }
 
 module "alb" {
@@ -33,6 +34,26 @@ module "database" {
   create_database            = var.create_database
   private_subnet_ids         = module.network.private_subnet_ids
   database_security_group_id = module.security.database_security_group_id
+}
+
+module "service_database" {
+  source   = "../../modules/database"
+  for_each = { for name, service in var.services : name => service if service.database }
+
+  name                       = each.key
+  create_database            = true
+  private_subnet_ids         = module.network.private_subnet_ids
+  database_security_group_id = module.security.service_database_security_group_ids[each.key]
+}
+
+module "service_cache" {
+  source   = "../../modules/cache"
+  for_each = { for name, service in var.services : name => service if service.cache }
+
+  name                    = each.key
+  create_cache            = true
+  private_subnet_ids      = module.network.private_subnet_ids
+  cache_security_group_id = module.security.service_cache_security_group_ids[each.key]
 }
 
 module "service" {
