@@ -167,3 +167,78 @@ resource "aws_vpc_security_group_ingress_rule" "database_from_instances" {
   to_port                      = 5432
   referenced_security_group_id = aws_security_group.instance.id
 }
+
+locals {
+  service_databases = { for name, service in var.services : name => service if service.database }
+  service_caches    = { for name, service in var.services : name => service if service.cache }
+}
+
+# Per-service database, one group each, not one group shared by every
+# per-service database. Same caveat as the shared group above: ingress is
+# from the one shared instance group, not a per-service one, so this does
+# not stop a compromised instance from a different service reaching it.
+resource "aws_security_group" "service_database" {
+  for_each = local.service_databases
+
+  name        = "${var.name}-${each.key}-database"
+  description = "PostgreSQL for ${each.key}, open only to service instances"
+  vpc_id      = var.vpc_id
+
+  tags = {
+    Name = "${var.name}-${each.key}-database"
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "service_database_from_instances" {
+  for_each = local.service_databases
+
+  security_group_id            = aws_security_group.service_database[each.key].id
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+  referenced_security_group_id = aws_security_group.instance.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "instance_to_service_database" {
+  for_each = local.service_databases
+
+  security_group_id            = aws_security_group.instance.id
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+  referenced_security_group_id = aws_security_group.service_database[each.key].id
+  description                  = "PostgreSQL for ${each.key}"
+}
+
+resource "aws_security_group" "service_cache" {
+  for_each = local.service_caches
+
+  name        = "${var.name}-${each.key}-cache"
+  description = "Valkey for ${each.key}, open only to service instances"
+  vpc_id      = var.vpc_id
+
+  tags = {
+    Name = "${var.name}-${each.key}-cache"
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "service_cache_from_instances" {
+  for_each = local.service_caches
+
+  security_group_id            = aws_security_group.service_cache[each.key].id
+  ip_protocol                  = "tcp"
+  from_port                    = 6379
+  to_port                      = 6379
+  referenced_security_group_id = aws_security_group.instance.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "instance_to_service_cache" {
+  for_each = local.service_caches
+
+  security_group_id            = aws_security_group.instance.id
+  ip_protocol                  = "tcp"
+  from_port                    = 6379
+  to_port                      = 6379
+  referenced_security_group_id = aws_security_group.service_cache[each.key].id
+  description                  = "Valkey for ${each.key}"
+}

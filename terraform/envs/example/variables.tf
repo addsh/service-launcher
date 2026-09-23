@@ -41,8 +41,8 @@ variable "create_database" {
 
 # Each key is the service name, used to tag and name that service's
 # resources and, by default, to derive its listener rule priority. Fields
-# mirror services.yaml in the CloudFormation version; database and cache
-# are not wired here yet, and compute is validated but only ec2 is built.
+# mirror services.yaml in the CloudFormation version; compute is validated
+# but only ec2 is built.
 variable "services" {
   type = map(object({
     port                   = optional(number, 80)
@@ -56,6 +56,12 @@ variable "services" {
     max_size               = optional(number, 3)
     target_cpu_utilization = optional(number, 60)
     hosted_zone_id         = optional(string)
+    # Each true creates a dedicated per-service PostgreSQL instance or
+    # Valkey cluster, on top of whatever the shared create_database gives
+    # the environment. Both cost money on their own; see modules/database
+    # and modules/cache.
+    database = optional(bool, false)
+    cache    = optional(bool, false)
     # ec2 or ecs. Only ec2 is wired up so far; modules/ecs-service does not
     # exist yet.
     compute = optional(string, "ec2")
