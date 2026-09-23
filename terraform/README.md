@@ -22,7 +22,7 @@ fmt`, `terraform validate`, and `terraform test` on every push; it never runs
 ## Layout
 
 - `terraform/modules/<name>/` - reusable modules: `network`, `security`,
-  `alb`, `database`, `service`, `cache`, and later `ecs-service`.
+  `alb`, `database`, `service`, `cache`, and `ecs-service`.
 - `terraform/envs/example/` - the root module a user copies and edits, wiring
   the modules together and holding the services map.
 - `terraform/bootstrap/` - a one-time apply that creates the S3 bucket

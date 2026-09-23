@@ -10,7 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Add modules/ecs-service for the Fargate compute path, selected when a service sets compute to ecs
 - [ ] Add envs/example/terraform.tfvars.example equivalent to services.example.yaml, and outputs for ALB DNS names and per-service URLs
 - [ ] Add terraform test files with mock_provider covering for_each service creation, priority derivation, and each validation rule
 - [ ] Add scripts/tf-plan.sh and scripts/tf-destroy.sh wrapping init, plan, and destroy for envs/example with a cost warning, never applying automatically
@@ -22,6 +21,7 @@ Write tasks as outcomes, not instructions.
 
 ## Done
 
+- [x] Add modules/ecs-service for the Fargate compute path, selected when a service sets compute to ecs
 - [x] Add optional per-service database and cache modules selected by database and cache booleans in the services map
 - [x] Add variable validation blocks mirroring generate.py: name format, exposure enum, compute enum, and a cap of 95 services per listener
 - [x] Wire envs/example: a services map variable iterated with for_each over modules/service, with listener rule priorities taken from an optional per-service field and otherwise derived deterministically from sorted service names

@@ -62,8 +62,9 @@ variable "services" {
     # and modules/cache.
     database = optional(bool, false)
     cache    = optional(bool, false)
-    # ec2 or ecs. Only ec2 is wired up so far; modules/ecs-service does not
-    # exist yet.
+    # ec2 or ecs. ec2 uses modules/service, an autoscaling group of
+    # instances; ecs uses modules/ecs-service, a Fargate service. Both
+    # attach to the same shared ALBs and security group.
     compute = optional(string, "ec2")
     # Listener rule priority. Must be unique per listener. Leave unset to
     # have it derived from sorted service names within the same exposure;
