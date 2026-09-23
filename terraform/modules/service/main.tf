@@ -17,6 +17,9 @@ locals {
   # a wildcard across every parameter in the account, so one service's
   # config can never be read by another's instance role.
   ssm_parameter_path = "/service-launcher/${var.name}"
+
+  alb_dns_name = var.exposure == "public" ? var.public_alb_dns_name : var.internal_alb_dns_name
+  alb_zone_id  = var.exposure == "public" ? var.public_alb_zone_id : var.internal_alb_zone_id
 }
 
 resource "aws_lb_target_group" "this" {
@@ -156,5 +159,69 @@ resource "aws_launch_template" "this" {
 
   tags = {
     Name = var.name
+  }
+}
+
+# Private subnets: instances are never reached directly, only through the
+# ALB, so they have no need of a public IP.
+resource "aws_autoscaling_group" "this" {
+  name = "${var.name}-asg"
+
+  min_size            = var.min_size
+  max_size            = var.max_size
+  vpc_zone_identifier = var.private_subnet_ids
+  target_group_arns   = [aws_lb_target_group.this.arn]
+
+  # ELB health checks, not just EC2 status checks, so an instance that boots
+  # fine but fails the target group health check still gets replaced.
+  health_check_type         = "ELB"
+  health_check_grace_period = 120
+
+  launch_template {
+    id      = aws_launch_template.this.id
+    version = aws_launch_template.this.latest_version
+  }
+
+  instance_refresh {
+    strategy = "Rolling"
+    preferences {
+      min_healthy_percentage = 50
+      instance_warmup        = 300
+    }
+  }
+
+  tag {
+    key                 = "Name"
+    value               = var.name
+    propagate_at_launch = true
+  }
+}
+
+resource "aws_autoscaling_policy" "cpu" {
+  name                   = "${var.name}-cpu-target-tracking"
+  autoscaling_group_name = aws_autoscaling_group.this.name
+  policy_type            = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = var.target_cpu_utilization
+  }
+}
+
+# Optional: a service with no hosted zone still works, just reached by the
+# ALB DNS name directly instead of host_header.
+resource "aws_route53_record" "this" {
+  count = var.hosted_zone_id != null ? 1 : 0
+
+  zone_id = var.hosted_zone_id
+  name    = var.host_header
+  type    = "A"
+
+  alias {
+    name                   = local.alb_dns_name
+    zone_id                = local.alb_zone_id
+    evaluate_target_health = true
   }
 }
