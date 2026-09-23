@@ -10,9 +10,6 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Add an autoscaling group with target-tracking CPU policy and an optional Route 53 alias record to modules/service
-- [ ] Wire envs/example: a services map variable iterated with for_each over modules/service, with listener rule priorities taken from an optional per-service field and otherwise derived deterministically from sorted service names
-- [ ] Add variable validation blocks mirroring generate.py: name format, exposure enum, compute enum, and a cap of 95 services per listener
 - [ ] Add optional per-service database and cache modules selected by database and cache booleans in the services map
 - [ ] Add modules/ecs-service for the Fargate compute path, selected when a service sets compute to ecs
 - [ ] Add envs/example/terraform.tfvars.example equivalent to services.example.yaml, and outputs for ALB DNS names and per-service URLs
@@ -26,6 +23,9 @@ Write tasks as outcomes, not instructions.
 
 ## Done
 
+- [x] Add variable validation blocks mirroring generate.py: name format, exposure enum, compute enum, and a cap of 95 services per listener
+- [x] Wire envs/example: a services map variable iterated with for_each over modules/service, with listener rule priorities taken from an optional per-service field and otherwise derived deterministically from sorted service names
+- [x] Add an autoscaling group with target-tracking CPU policy and an optional Route 53 alias record to modules/service
 - [x] Create modules/service: target group, host-header listener rule, IAM role and instance profile scoped to the service's own SSM path, and a launch template with IMDSv2 required and encrypted gp3 root volume
 - [x] Create modules/database: optional shared encrypted PostgreSQL using manage_master_user_password so credentials live in Secrets Manager
 - [x] Create modules/alb: internet-facing and internal ALBs with HTTP listeners returning a 404 fixed response, and an optional HTTPS listener when certificate_arn is set
