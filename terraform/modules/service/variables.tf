@@ -93,3 +93,52 @@ variable "root_volume_size" {
   default     = 8
   description = "Root EBS volume size in GiB."
 }
+
+variable "private_subnet_ids" {
+  type        = list(string)
+  description = "Private subnet ids from the network module. Instances are never reached directly, only through the ALB, so they carry no public IP."
+}
+
+variable "min_size" {
+  type        = number
+  default     = 1
+  description = "Minimum number of instances in the autoscaling group."
+}
+
+variable "max_size" {
+  type        = number
+  default     = 3
+  description = "Maximum number of instances in the autoscaling group."
+}
+
+variable "target_cpu_utilization" {
+  type        = number
+  default     = 60
+  description = "Target average CPU percent the scaling policy holds the group to."
+}
+
+variable "public_alb_dns_name" {
+  type        = string
+  description = "DNS name of the public ALB, from the alb module."
+}
+
+variable "public_alb_zone_id" {
+  type        = string
+  description = "Canonical hosted zone id of the public ALB, from the alb module."
+}
+
+variable "internal_alb_dns_name" {
+  type        = string
+  description = "DNS name of the internal ALB, from the alb module."
+}
+
+variable "internal_alb_zone_id" {
+  type        = string
+  description = "Canonical hosted zone id of the internal ALB, from the alb module."
+}
+
+variable "hosted_zone_id" {
+  type        = string
+  default     = null
+  description = "Route 53 hosted zone id to create an alias record for host_header in. Leave null to skip DNS and point it at the ALB some other way."
+}
