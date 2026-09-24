@@ -290,6 +290,57 @@ repo and CodePipeline are not supported yet for compute: ecs. generate.py
 rejects the combination. A working pipeline for it needs an ECR push and a
 task definition update, neither of which service-ecs.yaml does today.
 
+## CloudFormation versus Terraform
+
+A Terraform port of the same architecture lives in terraform/, described in
+its own terraform/README.md: same VPC, same two ALBs, same per-service
+resources. templates/ does not change while that port is being built. This
+section compares the two.
+
+Loops versus nested stacks. CloudFormation has no loop construct and caps a
+stack at 500 resources, which is why this repo generates a parent stack with
+one nested AWS::CloudFormation::Stack per service instead of inlining
+everything, and why generate.py has to assign listener rule priorities by
+position. Terraform's for_each handles any number of services in one state
+file, keyed by service name, so the Terraform port has neither problem:
+no split stack, and no priority shift when a service in the middle of the
+map is removed.
+
+State and locking. CloudFormation keeps no state file; AWS itself is the
+source of truth for what a stack owns, and two people deploying the same
+stack just queue behind CloudFormation's own stack-level lock. Terraform
+keeps its own state file, S3 in this port with use_lockfile = true for
+native locking, and that file can drift out of sync with what AWS actually
+has. Nothing but Terraform itself does that bookkeeping.
+
+Drift detection. CloudFormation can detect drift on request, diffing a
+stack's template against live resource properties, but nothing runs that
+check automatically. Terraform detects drift as a side effect of every
+plan, since a plan always reads current resource state before comparing it
+to configuration. In practice that favors Terraform: drift surfaces the
+next time anyone runs a plan, not only when someone remembers to go ask for
+a drift report.
+
+Imports. Terraform's import blocks are declarative and can be planned
+before they are applied, so a bad import shows up as an ordinary plan diff.
+CloudFormation's import path requires the target resource's live properties
+to already match a template with no reported drift before it will accept
+the import, which for anything changed by hand usually means writing the
+template blind, then iterating against CloudFormation's rejections instead
+of a plan.
+
+Where each made this design easier or harder. Nested stacks bought
+CloudFormation a workable ceiling on service count, but generate.py exists
+mainly to route around two CloudFormation gaps: no loops, and no way to
+compute unique listener priorities inside the template. Terraform's
+for_each removed both problems with no generator step at all. That shows up
+most in the optional per-service resources: modules/database and
+modules/cache are for_each over a boolean filter with no other wiring,
+where the same feature on the CloudFormation side needed the walkthrough in
+docs/adding-a-resource-type.md. The one place CloudFormation had it just as
+easy: manage_master_user_password works the same way on both sides, so
+credentials into Secrets Manager cost neither tool anything extra.
+
 ## License
 
 MIT

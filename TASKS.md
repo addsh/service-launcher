@@ -10,17 +10,14 @@ Write tasks as outcomes, not instructions.
 
 ## Backlog
 
-- [ ] Add envs/example/terraform.tfvars.example equivalent to services.example.yaml, and outputs for ALB DNS names and per-service URLs
-- [ ] Add terraform test files with mock_provider covering for_each service creation, priority derivation, and each validation rule
-- [ ] Add scripts/tf-plan.sh and scripts/tf-destroy.sh wrapping init, plan, and destroy for envs/example with a cost warning, never applying automatically
-- [ ] Add a CloudFormation versus Terraform section to the main README comparing loops versus nested stacks, state and locking, drift detection, imports, and where each tool made this design easier or harder
-- [ ] Add docs/terraform-import.md explaining how to adopt existing resources into this layout with import blocks
-
-
-
 
 ## Done
 
+- [x] Add docs/terraform-import.md explaining how to adopt existing resources into this layout with import blocks
+- [x] Add a CloudFormation versus Terraform section to the main README comparing loops versus nested stacks, state and locking, drift detection, imports, and where each tool made this design easier or harder
+- [x] Add scripts/tf-plan.sh and scripts/tf-destroy.sh wrapping init, plan, and destroy for envs/example with a cost warning, never applying automatically
+- [x] Add terraform test files with mock_provider covering for_each service creation, priority derivation, and each validation rule
+- [x] Add envs/example/terraform.tfvars.example equivalent to services.example.yaml, and outputs for ALB DNS names and per-service URLs
 - [x] Add modules/ecs-service for the Fargate compute path, selected when a service sets compute to ecs
 - [x] Add optional per-service database and cache modules selected by database and cache booleans in the services map
 - [x] Add variable validation blocks mirroring generate.py: name format, exposure enum, compute enum, and a cap of 95 services per listener
