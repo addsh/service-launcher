@@ -1,7 +1,65 @@
 # service-launcher
 
-Declare your services in one YAML file. Get a production-shaped AWS environment
-for all of them.
+Declare your services in one YAML file. Get a production-shaped AWS
+environment for all of them: a shared VPC, public and internal ALBs, and one
+isolated stack per service with autoscaling, DNS, alarms, and an optional
+database, cache, and build pipeline.
+
+Available in CloudFormation (`templates/`) and Terraform (`terraform/`).
+
+## Status
+
+Deployed end to end against a live AWS account and tested, October 2026.
+28 unit tests on the generator, cfn-lint on every template, and
+`terraform test` with mock providers run on every pull request.
+
+## How this repo is built
+
+Most of the code here was written by an AI agent running unattended, three
+times a weekday, under rules I wrote and review.
+
+- `.github/workflows/daily-build.yml` runs Claude Code in GitHub Actions.
+- `TASKS.md` is the backlog. The agent takes the next independent tasks,
+  one commit per task, then opens and merges a pull request.
+- `CLAUDE.md` holds the standing rules: architecture, scope limits, cost
+  and security conventions, a precedence order for design decisions, and
+  writing style.
+- Guardrails sit in permissions, not only in the prompt. The job's token is
+  scoped to this repo and cannot edit workflow files, and there are no AWS
+  credentials in CI. Nothing is deployed automatically.
+- Every pull request has to pass the unit tests, cfn-lint, and Terraform
+  fmt, validate, and test.
+
+I write the backlog as outcomes, review the merged work two or three times a
+week, and turn anything I catch into a new rule in CLAUDE.md. The git
+history of `CLAUDE.md` and `daily-build.yml` shows how the instructions
+changed as the agent failed in new ways.
+
+## Quickstart
+
+```bash
+cp services.example.yaml services.yaml
+# edit services.yaml: change the first service's name to something of yours
+./scripts/deploy.sh
+```
+
+That deploys the shared stack (VPC, both ALBs, VPC endpoints) and then a
+nested stack per service. The shared stack takes the longest, mostly the
+interface VPC endpoints.
+
+Routing is host-based, so curl needs the Host header a service was assigned.
+The default is `<service-name>.<domainName>` from services.yaml.
+
+```bash
+ALB_DNS=$(aws cloudformation describe-stacks --stack-name launcher-shared \
+  --query "Stacks[0].Outputs[?OutputKey=='PublicAlbDnsName'].OutputValue" \
+  --output text)
+curl -H "Host: orders-api.example.internal" "http://$ALB_DNS/"
+```
+
+Run scripts/teardown.sh when done. See Cost below for why that matters.
+
+## Goal
 
 ```yaml
 sharedStackName: launcher-shared
@@ -12,7 +70,6 @@ services:
   - name: payments-api
     port: 8080
     minSize: 2
-    maxSize: 6
   - name: reconciliation-worker
     exposure: internal
 ```
@@ -21,175 +78,295 @@ services:
 ./scripts/deploy.sh
 ```
 
-Three services, or fifty, from the same file. Each one gets a target group, a
-host-based listener rule on a shared ALB, a launch template, an autoscaling
-group with target-tracking CPU scaling, a scoped IAM role, and a Route 53
-record. Shared across all of them: the VPC, two ALBs (one internet-facing, one
-internal), and a PostgreSQL instance.
-
----
-
-## Why this exists
-
-The usual way a small platform team handles fifty microservices is fifty
-copy-pasted CloudFormation stacks that have quietly drifted apart, or a
-Terraform module nobody outside the team can safely run. This is the middle
-ground: one input file, one deploy command, and no per-service infrastructure
-knowledge required from application developers.
+Three services, or fifty, from the same file. Each gets a target group, a
+host-based listener rule on a shared ALB, an autoscaling group, and a DNS
+record. Shared across all of them: the VPC, two ALBs, and a PostgreSQL
+instance.
 
 ## Architecture
 
+Two stacks. templates/shared.yaml deploys once per environment: the VPC,
+two ALBs, VPC endpoints, and an optional PostgreSQL instance. templates/
+service.yaml deploys once per service, as a nested stack under a generated
+parent, and holds only what is specific to that service: a target group, a
+listener rule, an IAM role, a launch template, an autoscaling group, and an
+optional DNS record.
+
 ```
-services.yaml
-     |
-     v
-generate.py  ---->  build/services.generated.yaml   (parent: N nested stacks)
-                              |
-                              v
-            +-----------------+-----------------+
-            |                 |                 |
-      service stack     service stack     service stack
-       (orders-api)    (payments-api)      (recon-worker)
-            |                 |                 |
-            +--------+--------+--------+--------+
-                     |                 |
-              public ALB         internal ALB
-                     |                 |
-                     +--------+--------+
-                              |
-                    shared VPC + PostgreSQL
-                       (shared.yaml)
+                     Internet
+                        |
+                        v
+              +-------------+     +-------------+
+              | public ALB  |     |internal ALB |    shared.yaml
+              +-------------+     +-------------+
+                    |                    |
+             host-header rule     host-header rule
+              per public service   per internal service
+                    v                    v
+              +-------------+     +-------------+
+              | service ASG | ... | service ASG |     service.yaml
+              | (private     |    | (private     |    (nested stack,
+              |  subnet)     |    |  subnet)     |     one per service)
+              +-------------+     +-------------+
+                     \                   /
+                      v                 v
+                 +-----------------------+
+                 |  PostgreSQL, optional  |    shared.yaml
+                 |  (CreateDatabase=true) |
+                 +-----------------------+
+
+services.yaml -> generate.py -> build/services.generated.yaml
+                                 (parent stack, one AWS::CloudFormation::Stack
+                                  per service, each pointing at service.yaml)
 ```
 
-Two stacks, deployed in order:
+Nested stacks, not one flat stack. CloudFormation caps a stack at 500
+resources and has no loop construct. Each service needs roughly nine
+resources, so fifty services inlined would land near 450 with no headroom,
+and one bad service would roll back all fifty. Nested stacks move the
+ceiling to roughly 500 services and isolate a failing service from the
+others. The cost is that ALB listener rule priorities must be unique per
+listener and CloudFormation cannot compute them, so generate.py assigns them
+by position.
 
-**`templates/shared.yaml`** is deployed once per environment. VPC across two
-AZs, public and private subnets, an internet-facing ALB and an internal ALB,
-security groups wired so instances accept traffic only from the ALBs and the
-database accepts traffic only from instances, and an optional encrypted
-PostgreSQL instance whose master credentials are generated into Secrets Manager
-and never appear in a parameter or a repo. Everything downstream needs is
-published as a cross-stack export.
+Two shared ALBs, not one per service. An ALB bills whether or not it is
+carrying traffic, so fifty ALBs for fifty services would be the single
+largest line item in the whole setup. One public and one internal ALB, with
+services distinguished by a host-header listener rule, means the ALB cost
+stays flat as services are added. The tradeoff is the 100-rule-per-listener
+quota, which is why generate.py caps a listener at 95 services.
 
-**`templates/service.yaml`** is deployed once per service, as a nested stack.
-It imports from the shared stack and adds only what is specific to that
-service.
+VPC endpoints, not a NAT Gateway, by default. Instances in the private
+subnets need to reach SSM (for Session Manager access) and S3 (for the
+CloudFormation package artifacts). A NAT Gateway would cover that plus
+arbitrary internet egress, but it bills per hour whether used or not, on top
+of a per-AZ EIP. Gateway and interface VPC endpoints cover the same two
+destinations for less, and don't require a public subnet to route through.
+NAT Gateway is still available behind the EnableNatGateway parameter for a
+service that genuinely needs to reach the open internet.
 
-## Three design decisions worth explaining
+## CodePipeline and CodeBuild
 
-### Nested stacks, not one big template
+Setting `repo` on a service (and `codeStarConnectionArn` once, at the top of
+services.yaml) creates a CodePipeline with a Source stage and a Build stage:
+CodeBuild runs on every push to `branch`, using a buildspec.yml the service
+repo provides. There is no deploy stage. The build artifact lands in an S3
+bucket and stops there; wiring it into the autoscaling group is unbuilt, see
+Known limitations.
 
-CloudFormation caps a stack at 500 resources and has no loop construct. Each
-service needs about nine resources, so inlining fifty services would land near
-450 with no headroom, and one bad service would roll back all fifty.
+The CodeStar Connection itself cannot be created by CloudFormation or the
+CLI. It requires a one-time handshake through the AWS console:
 
-Generating a parent stack with one `AWS::CloudFormation::Stack` per service
-moves the ceiling from roughly 55 services to roughly 500, and isolates
-failures to the service that caused them. A single service can be updated
-without touching its neighbours.
+1. In the console, go to Developer Tools > Settings > Connections > Create
+   connection, choose GitHub.
+2. Follow the prompt to install the AWS Connector for GitHub app on the
+   organization that owns the repos you want built, granting it access to
+   those repos.
+3. Complete the connection. Its status moves from Pending to Available only
+   after the GitHub-side authorization finishes in a browser tab.
+4. Copy the connection ARN into `codeStarConnectionArn` in services.yaml.
 
-The cost is that listener rule priorities must be unique per listener and
-CloudFormation cannot compute them, so `generate.py` assigns them by position
-within the exposure group. Append to `services.yaml` rather than reordering it;
-reordering churns priorities and forces rule replacement.
-
-### One ALB, not one per service
-
-An ALB is around 16 to 25 USD/month before LCU charges. Fifty of them is a
-four-figure annual bill for load balancers alone. Sharing one ALB with
-host-based routing makes the marginal cost of an additional service just its
-EC2 capacity.
-
-The constraint this buys is the default quota of 100 rules per listener.
-`generate.py` fails at generate time above 95, rather than three minutes into a
-deploy. Past that, deploy a second shared stack.
-
-### VPC endpoints instead of a NAT Gateway by default
-
-Instances in private subnets need to reach SSM and S3. A NAT Gateway does that
-for about 32 USD/month plus data processing charges. Interface endpoints for
-SSM and a gateway endpoint for S3 cover the same need at a fraction of the cost
-for this traffic profile.
-
-`EnableNatGateway` exists for workloads that genuinely need general internet
-egress, and defaults to `false`. Turning on a NAT Gateway should be a decision
-someone makes, not a default they inherit.
+Do this once per AWS account; every service's pipeline can reuse the same
+connection as long as the GitHub app has access to that service's repo.
 
 ## Cost
 
-Roughly, in `ap-south-1`, with defaults:
+Rough monthly estimates in ap-south-1, list pricing as of writing. Actual
+cost depends on traffic and data transfer; check the AWS Pricing Calculator
+for current numbers before relying on these.
 
-| Component | Monthly (USD) |
-|---|---|
-| Public ALB | ~18 |
-| Internal ALB | ~18 |
-| `db.t4g.micro` PostgreSQL, 20 GB gp3, single AZ | ~15 |
-| 3 interface VPC endpoints | ~22 |
-| `t3.micro` per service instance | ~8 each |
-| NAT Gateway, if enabled | ~32 + data |
+| Component | Estimate | On by default |
+| --- | --- | --- |
+| Public ALB | $18-20 base, plus LCU usage | yes |
+| Internal ALB | $18-20 base, plus LCU usage | yes |
+| Interface VPC endpoints (ssm, ssmmessages, ec2messages, 2 AZs each) | $43 | yes |
+| S3 gateway endpoint | free | yes |
+| Artifact S3 bucket | under $1 | yes |
+| t3.micro instance, per running service instance | $8-9 | yes, one per service by default |
+| gp3 root volume, 8 GiB, per instance | under $1 | yes |
+| NAT Gateway, one per AZ | $65-70 combined, plus data processing | no, EnableNatGateway |
+| PostgreSQL db.t4g.micro, Multi-AZ, 20 GiB gp3 | $28-30 | no, CreateDatabase |
+| Secrets Manager secret | $0.40 | no, only with CreateDatabase |
+| Per-service PostgreSQL db.t4g.micro, Multi-AZ, 20 GiB gp3 | $28-30 per service | no, only with that service's database: true |
+| Per-service Secrets Manager secret | $0.40 per service | no, only with that service's database: true |
+| Per-service Valkey cache.t4g.micro, single-node | $9-10 per service | no, only with that service's cache: true |
+| Fargate task, 0.25 vCPU / 512 MiB, per running task | $11-12 | no, only with that service's compute: ecs, one per service by default |
+| CodePipeline, per service | $1 after the first free pipeline per month | no, only with repo set |
+| CodeBuild, BUILD_GENERAL1_SMALL | $0.005 per build minute | no, only with repo set |
+| Pipeline artifact S3 bucket, per service | under $1 | no, only with repo set |
+| CloudWatch dashboard, per service | $3 after the first three free dashboards per account | yes |
+| CloudWatch alarms, 2 per service | $0.20 after the first ten free alarms per account | yes |
 
-Set `CreateDatabase=false` and run a single service and it drops to about 45.
-**Run `./scripts/teardown.sh` at the end of every session.** It deletes stacks
-in dependency order and then lists any NAT Gateways, load balancers, or RDS
-instances still running in the region, because those are what generate a
-surprise bill.
+Nothing in this table tears itself down. Run scripts/teardown.sh at the end
+of every session; a personal account left running a shared ALB, three
+interface endpoints, and a couple of EC2 instances is a few dollars a day
+that adds up if forgotten.
 
-## Getting started
+## Security
 
-```bash
-# 1. Set a budget alert before anything else
-./scripts/budget-alarm.sh you@example.com 30
+Encryption at rest:
 
-# 2. Declare your services
-cp services.example.yaml services.yaml
-$EDITOR services.yaml
+| Resource | State |
+| --- | --- |
+| RDS PostgreSQL | `StorageEncrypted: true` |
+| ElastiCache Valkey | `AtRestEncryptionEnabled: true` |
+| Secrets Manager (database credentials) | encrypted by default with the AWS managed key |
+| Launch template root EBS volume | `Encrypted: true`, gp3 |
+| CloudWatch Logs (CodeBuild) | encrypted by default with the AWS managed key |
+| CloudWatch Logs (ECS tasks) | encrypted by default with the AWS managed key |
+| Pipeline artifact S3 bucket | SSE-S3, `AES256` |
 
-# 3. Deploy
-export AWS_REGION=ap-south-1
-./scripts/deploy.sh
+Encryption in transit:
 
-# 4. Verify (no DNS needed)
-curl -H 'Host: orders-api.example.internal' http://<alb-dns-name>/
+| Path | State |
+| --- | --- |
+| Client to public/internal ALB | HTTP by default; HTTPS available when `CertificateArn` is set, `ELBSecurityPolicy-TLS13-1-2-2021-06` |
+| Service listener rule to ALB | attaches to the HTTP listener unless `UseHttps` is set on the service, which requires the shared stack to have a certificate |
+| Interface VPC endpoints (SSM) | HTTPS only, port 443 |
+| Instance to PostgreSQL | `rds.force_ssl` set in the DB parameter group; plaintext connections are rejected |
+| Instance to Valkey | `TransitEncryptionEnabled: true` on the replication group |
+| CodePipeline/CodeBuild to artifact bucket | bucket policy denies any request without `aws:SecureTransport` |
 
-# 5. Tear down
-./scripts/teardown.sh
-```
+Not encrypted in transit: ALB to instance, on the target group's HTTP port.
+This traffic stays inside the private subnets and never leaves the VPC.
+Adding TLS here would mean issuing and rotating a certificate per instance,
+which is a much larger change than this task; see Known limitations.
 
-Instances boot with nginx serving a placeholder page and a `200` on the health
-check path, so a fresh deploy is verifiable end to end before you have an
-application to put on it. Replace the `UserData` block in
-`templates/service.yaml` with your own bootstrap, or point `AmiId` at a baked
-image.
+## Compliance notes
 
-## Requirements
+This is a starting point for satisfying common control frameworks, not a
+certification and not a substitute for a real audit. Mapping is against the
+kind of controls SOC 2 and ISO 27001 both ask for, phrased generically since
+this repo targets no framework in particular.
 
-AWS CLI v2, Python 3.9+, PyYAML, and credentials with permission to create VPC,
-ELB, EC2, Auto Scaling, RDS, IAM, Route 53, and CloudFormation resources.
+Encryption at rest: covered for every data store the templates create.
+RDS, ElastiCache, Secrets Manager, the launch template's root volume, and
+both S3 buckets are encrypted; see Security above for the full list.
 
-## Roadmap
+Encryption in transit: covered between the client and the ALB when
+CertificateArn is set, and between instances and PostgreSQL or Valkey.
+Not covered between the ALB and instances, which stays inside the private
+subnets; see Security above for why that gap exists.
 
-- [ ] CodePipeline per service, driven by a `repo` field in `services.yaml`
-- [ ] ECS Fargate as an alternative compute target
-- [ ] EKS as a third compute target, services scheduled onto a shared cluster
-- [ ] CloudWatch dashboard and alarms generated per service
-- [ ] Web UI that writes `services.yaml`, so application teams never open the
-      infrastructure repo
-- [ ] CIS-hardened base AMI via EC2 Image Builder
+Least-privilege IAM: every IAM policy in these templates names explicit
+resource ARNs. No statement uses `Resource: "*"` without a comment naming
+the API that requires it. Instance and pipeline roles are scoped to the one
+service they belong to, not shared across services.
+
+Network segmentation: security groups chain from ALB to instance to
+database, each accepting traffic only from the security group in front of
+it. Instances and data stores sit in private subnets with no route to the
+internet unless EnableNatGateway is set. One service's security group
+cannot reach another service's database or cache.
+
+Audit logging: not covered. These templates do not enable CloudTrail, VPC
+Flow Logs, or ALB access logs. CodeBuild and the ECS compute path write
+application logs to CloudWatch Logs, but that is not an audit trail of who
+changed what. A user with an audit logging requirement needs to add these
+separately.
 
 ## Known limitations
 
-Honest list, not a wish list:
+Listener rule priorities are assigned by position in services.yaml, not by a
+stable key. Reordering the services list, or deleting one from the middle,
+shifts every priority after it and updates every listener rule below the
+change on the next deploy. This is harmless (the rules still route the same
+host headers) but it means a deploy diff can touch far more of the stack
+than the actual edit.
 
-- Listener rule priorities are position-derived. Reordering `services.yaml` is
-  a breaking change; appending is not.
-- No blue/green. The ASG rolling update policy replaces one instance at a time
-  with a five minute pause, which is safe but slow at scale.
-- The shared database is a single instance with one master credential. Real
-  multi-tenancy needs per-service databases and roles.
-- HTTPS requires you to supply an existing ACM certificate ARN. Certificate
-  issuance and DNS validation are not automated.
-- Not yet tested above three services. The quota reasoning is sound; the
-  behaviour at fifty is unverified.
+No blue/green or canary deploys. A service update replaces instances through
+the autoscaling group's rolling update policy, one batch at a time, gated
+only by the ELB health check. There is no way to shift a fraction of traffic
+to a new version and watch it before committing the rest.
+
+One database credential, shared by every service. CreateDatabase produces a
+single master secret in Secrets Manager; there is no per-service database
+user or password. A service with a compromised credential has the same
+database access as every other service.
+
+ACM certificates are issued manually. The optional HTTPS listener takes a
+CertificateArn parameter, but nothing in this repo requests or validates the
+certificate. Get one issued and validated in ACM first, in the same region
+as the shared stack, then pass its ARN in.
+
+CodePipeline builds but does not deploy. Setting repo gets a service built on
+every push, but the build output is not deployed anywhere: there is no
+CodeDeploy stage or instance refresh triggered from the pipeline. Getting a
+new build onto the autoscaling group is still a manual step.
+
+ALB to instance traffic is plaintext HTTP. The target group and health check
+both use the service's HTTP port; only the client-to-ALB and ALB-to-database
+hops are encrypted. This is inside the VPC, not the open internet, but a
+compliance requirement for encryption on every hop would need per-instance
+certificates, which this repo does not issue.
+
+Alarms are silent by default. Each service gets an unhealthy host alarm and a
+5xx alarm, but AlarmSnsTopicArn is empty unless set, so nothing actually
+notifies anyone until you point it at a topic. The 5xx alarm is a raw count
+per period, not a percentage of traffic, since computing a real rate needs a
+metric math expression and a decision about what happens at zero traffic.
+
+The ecs compute path needs a route to the internet to pull its image.
+public.ecr.aws is a public registry like any other; with EnableNatGateway
+false (the default) and no ECR interface endpoints in shared.yaml, a task in
+the private subnets cannot pull it and the service sits in PENDING. Turn on
+EnableNatGateway, add ECR interface endpoints, or point Image at something
+reachable without either.
+
+repo and CodePipeline are not supported yet for compute: ecs. generate.py
+rejects the combination. A working pipeline for it needs an ECR push and a
+task definition update, neither of which service-ecs.yaml does today.
+
+## CloudFormation versus Terraform
+
+A Terraform port of the same architecture lives in terraform/, described in
+its own terraform/README.md: same VPC, same two ALBs, same per-service
+resources. templates/ does not change while that port is being built. This
+section compares the two.
+
+Loops versus nested stacks. CloudFormation has no loop construct and caps a
+stack at 500 resources, which is why this repo generates a parent stack with
+one nested AWS::CloudFormation::Stack per service instead of inlining
+everything, and why generate.py has to assign listener rule priorities by
+position. Terraform's for_each handles any number of services in one state
+file, keyed by service name, so the Terraform port has neither problem:
+no split stack, and no priority shift when a service in the middle of the
+map is removed.
+
+State and locking. CloudFormation keeps no state file; AWS itself is the
+source of truth for what a stack owns, and two people deploying the same
+stack just queue behind CloudFormation's own stack-level lock. Terraform
+keeps its own state file, S3 in this port with use_lockfile = true for
+native locking, and that file can drift out of sync with what AWS actually
+has. Nothing but Terraform itself does that bookkeeping.
+
+Drift detection. CloudFormation can detect drift on request, diffing a
+stack's template against live resource properties, but nothing runs that
+check automatically. Terraform detects drift as a side effect of every
+plan, since a plan always reads current resource state before comparing it
+to configuration. In practice that favors Terraform: drift surfaces the
+next time anyone runs a plan, not only when someone remembers to go ask for
+a drift report.
+
+Imports. Terraform's import blocks are declarative and can be planned
+before they are applied, so a bad import shows up as an ordinary plan diff.
+CloudFormation's import path requires the target resource's live properties
+to already match a template with no reported drift before it will accept
+the import, which for anything changed by hand usually means writing the
+template blind, then iterating against CloudFormation's rejections instead
+of a plan.
+
+Where each made this design easier or harder. Nested stacks bought
+CloudFormation a workable ceiling on service count, but generate.py exists
+mainly to route around two CloudFormation gaps: no loops, and no way to
+compute unique listener priorities inside the template. Terraform's
+for_each removed both problems with no generator step at all. That shows up
+most in the optional per-service resources: modules/database and
+modules/cache are for_each over a boolean filter with no other wiring,
+where the same feature on the CloudFormation side needed the walkthrough in
+docs/adding-a-resource-type.md. The one place CloudFormation had it just as
+easy: manage_master_user_password works the same way on both sides, so
+credentials into Secrets Manager cost neither tool anything extra.
 
 ## License
 
